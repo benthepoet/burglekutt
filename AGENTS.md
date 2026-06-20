@@ -1,10 +1,17 @@
 # AGENTS.md
 
-Guidance for AI agents working on **burglekutt** — a tileset, metatile, and supertile editor for a TI-99/4A Zelda-like game.
+Guidance for AI agents working on **burglekutt** — a TI-99/4A Zelda-like game authoring toolchain (Python + Tkinter).
 
 ## Project summary
 
-Desktop Tkinter app with **three simultaneous editor windows** (tileset, metatile, supertile) for authoring the tile hierarchy used by the game engine. Edits propagate downstream live — change a base tile and every metatile/supertile that references it updates immediately.
+This repository contains **two apps**, developed in sequence:
+
+| App | Entry point | Status |
+|-----|-------------|--------|
+| **Tile editor** | `python3 src/editor.py` | **Current work** — tileset, metatile, supertile authoring |
+| **Map/screen editor** | `python3 src/map_editor.py` | **Follow-on** — after tile editor is complete |
+
+The tile editor is a desktop app with **three simultaneous windows** (tileset, metatile, supertile). Edits propagate downstream live — change a base tile and every metatile/supertile that references it updates immediately.
 
 | Level | Composition | Pixel size | Purpose |
 |-------|-------------|------------|---------|
@@ -19,9 +26,10 @@ The editor must produce data the game can consume directly — **pattern bytes**
 
 - **Language:** Python 3.6+ (stdlib only — no pip dependencies)
 - **UI:** Tkinter / ttk
-- **Entry point:** `python3 src/editor.py` (once created)
 
 User-facing docs belong in `README.md` (create when asked). This file is the agent spec. All conventions for palette, export templates, project JSON, and module layering are defined here and in this repository.
+
+**Scope rule:** Implement tile-editor phases first. Do not start map/screen editor work until tile-editor phases are complete (through Phase 7 Polish) unless the user explicitly says otherwise.
 
 ## Target game data shapes
 
@@ -102,10 +110,9 @@ SUPERS
 SUPERSEND
 ```
 
-### Playfield (future)
+### Screens & world (map editor — follow-on)
 
-- Dimensions TBD — define when map editing is scoped
-- Each supertile covers 8×10 characters (64×80 pixels)
+Screen layout and overworld map editing are **out of scope** for the tile editor. They belong to the map/screen editor app (see below). Each supertile covers 8×10 characters (64×80 pixels) and is the building block that app places on playfields.
 
 ## Repository layout (target)
 
@@ -113,22 +120,29 @@ Greenfield repo — grow into this structure incrementally:
 
 ```
 src/
-  editor.py              # App entry: shared project, launches all editor windows
-  project.py             # Single project state + change notifications
+  # Tile editor app (current)
+  editor.py              # Tile editor entry: Project + three editor windows
+  project.py             # Graphics project state + change notifications
   tileset_editor.py      # Tileset editor window
   metatile_editor.py     # Metatile editor window
   supertile_editor.py    # Supertile editor window
   tile_canvas.py         # 8×8 grid + per-row fg/bg swatch column
   tile_picker.py         # 16×16 picker window for tiles (256 slots)
   metatile_picker.py     # Picker for metatiles (up to 256; used by supertile editor)
-  composite.py           # Resolve metatile/supertile preview pixels from project
-  tile_model.py          # Tile / metatile / supertile data structures, validation
+  composite.py           # Resolve metatile/supertile preview pixels (shared)
+  tile_model.py          # Tile / metatile / supertile structs, validation
   palette.py             # TMS9918 color constants and swatch helpers
   pattern_export.py      # 8×8 bitplane → 8 pattern bytes
   color_export.py        # Per-line fg/bg → 8 color-table bytes
   asm_export.py          # Assembly text rendering
   asm_format_schema.py   # Load export format directories
   binary_export.py       # Raw byte output
+
+  # Map/screen editor app (follow-on — add after tile editor is complete)
+  map_editor.py          # Map editor entry: screen + world windows
+  map_model.py           # Screen layouts, world grid, connections
+  screen_editor.py       # Single-screen playfield editor window
+  world_editor.py        # Overworld / screen-link editor window
 
 formats/
   ti99_default/          # TI-99 BYTE export (default)
@@ -145,14 +159,18 @@ Keep business logic out of `editor.py` when it can live in pure, testable module
 ## Commands
 
 ```bash
-# Run the editor (once entry point exists)
+# Tile editor (current app)
 python3 src/editor.py
+
+# Map/screen editor (follow-on — after tile editor is complete)
+python3 src/map_editor.py
 
 # Run all tests (required before finishing substantive changes)
 python3 -m unittest discover -s tests
 
 # Debug logging (convention — define env var when adding diagnostics)
 TILE_EDITOR_DEBUG=1 python3 src/editor.py
+MAP_EDITOR_DEBUG=1 python3 src/map_editor.py
 ```
 
 No linter, formatter, or CI config yet. Match existing style in touched files.
@@ -279,7 +297,7 @@ A separate window for choosing which of the 256 tileset slots to edit.
 
 Thumbnail size should be readable but compact enough that the full 16×16 grid fits without scrolling on a typical display (e.g. 2× or 3× scale per pixel).
 
-## Development phases
+## Tile editor — development phases
 
 Build **one phase at a time**. After each phase, stop and report completion before starting the next unless the user says to continue.
 
@@ -331,17 +349,77 @@ Build **one phase at a time**. After each phase, stop and report completion befo
 - Binary export for raw pattern bytes, color-table bytes, and index tables
 - Separate export sections: `PATTERNS`, `COLORS`, `METAS`, `SUPERS`
 
-### Phase 7: Playfield preview (optional)
-
-- Map editor placing supertile indices on a grid (dimensions TBD)
-- Full-screen composite preview
-- Export playfield byte table
-
-### Phase 8: Polish
+### Phase 7: Polish
 
 - Keyboard shortcuts, ttk styling
 - Bulk line-color tools (copy row colors, fill all rows, apply fg/bg to selection)
 - Help → About
+
+**Tile editor complete** when Phase 7 is done. Map/screen editor work starts as a separate follow-on (below).
+
+## Follow-on: map & screen editor
+
+A **second app in this repo**, started only after the tile editor is complete. It consumes the same graphics data (`tiles`, `metatiles`, `supertiles`) and adds level-design authoring.
+
+### Responsibilities
+
+| Editor window | Purpose |
+|---------------|---------|
+| **Screen editor** | Place supertile indices on a single playfield (one room/area) |
+| **World editor** | Grid of screens, north/south/east/west links, screen metadata |
+
+Both windows open simultaneously (same pattern as the tile editor). They read graphics tables from `Project` and live-preview via `composite.py`. Screen/world edits do not modify tile pattern or color data.
+
+### Shared repo benefits
+
+- Reuse `project.py`, `composite.py`, `palette.py`, `binary_export.py`, `formats/`
+- One project JSON (version 2) holding graphics **and** map data, or load graphics from a v1 file
+- One test suite and export dialect
+
+### Map editor entry point
+
+`python3 src/map_editor.py` — creates or loads a `Project`, opens screen + world editor windows.
+
+### Map data shapes (initial — refine when scoped)
+
+**Screen** — supertile grid for one playfield (dimensions TBD; supertile = 64×80 px):
+
+```asm
+SCREEN00
+    BYTE >01,>01,>00,>03   ; row 0: supertile indices
+    ; ... playfield grid rows ...
+```
+
+**World** — screen cells and adjacency (format TBD):
+
+```json
+{
+  "screens": [
+    {"name": "SCREEN00", "cells": [1, 1, 0, 3, ...]}
+  ],
+  "world": {
+    "width": 8,
+    "height": 8,
+    "cells": [0, 0, 1, ...],
+    "links": []
+  }
+}
+```
+
+Export targets: `SCREENS`, `WORLD` (and related connection tables) — templates added under `formats/` when implemented.
+
+### Map editor phases (outline)
+
+Build after tile editor Phase 7 is complete, one phase at a time:
+
+1. **Shell** — `map_editor.py`, load graphics from project, screen editor window stub
+2. **Screen editor** — supertile picker, playfield grid, live composite preview
+3. **World editor** — screen grid, placement, basic metadata
+4. **Screen links** — connect screens (doors, edges, stairs)
+5. **Project I/O** — JSON v2 with `screens` + `world`; ASM/binary export for map data
+6. **Polish** — shortcuts, validation, referential integrity (invalid supertile indices)
+
+Exact playfield dimensions and link encoding are **TBD** when map editor work begins.
 
 ## Project JSON (target schema)
 
@@ -377,10 +455,13 @@ Versioned JSON project file:
       "name": "ST00",
       "cells": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     }
-  ],
-  "playfield": null
+  ]
 }
 ```
+
+**Version 1** (tile editor): `tiles`, `metatiles`, `supertiles` only.
+
+**Version 2** (map editor follow-on): add `screens` and `world` keys. Map editor must load v1 graphics-only projects; tile editor ignores unknown keys on load.
 
 - `tiles`: always 256 entries on save (pad with empty tiles if needed)
 - `metatiles`: 0–256 entries; reject load if more than 256
@@ -513,6 +594,7 @@ Preserve unless the user explicitly changes product behavior:
 - Do not replace multi-window editors with a single mode-switching UI unless the user asks.
 - Do not let editor windows hold divergent copies of tile/metatile/supertile data.
 - Do not reference or depend on code, docs, or conventions from outside this repository in project files unless the user explicitly asks.
+- Do not implement map/screen editor features during tile-editor phases unless the user explicitly asks.
 
 ## License
 
