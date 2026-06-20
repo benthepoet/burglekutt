@@ -10,7 +10,9 @@ Desktop Tkinter app with **three simultaneous editor windows** (tileset, metatil
 |-------|-------------|------------|---------|
 | **Tileset** | 256 base tiles | — | Full pattern table (one TMS9918 tile per slot) |
 | **Base tile** | 8×8 pixels | 8×8 | Single pattern-table entry (index 0–255) |
+| **Metatile set** | up to 256 metatiles | — | Composed chunks referencing base tiles |
 | **Metatile** | 2×2 base tiles | 16×16 | Reusable terrain/object chunks |
+| **Supertile set** | up to 256 supertiles | — | Composed blocks referencing metatiles |
 | **Supertile** | 4×5 metatiles | 64×80 | Screen-building blocks for the playfield |
 
 The editor must produce data the game can consume directly — **pattern bytes**, **color-table bytes**, metatile tables, and supertile maps — as assembly `BYTE` blocks (`PATTERNS`, `COLORS`, `METAS`, `SUPERS`).
@@ -55,21 +57,39 @@ COLORS
     BYTE >f1,>f1,>f1,>f1,>f1,>f1,>f1,>f1   ; tile 0 color table (fg=15, bg=1 per row)
 ```
 
+### Metatile set
+
+- **Up to 256 metatiles** (indices 0–255); default names `MT00`–`MTFF`
+- Add and remove metatiles in the metatile editor; block add when count would exceed 256
+- Indices are dense: `0 .. count-1`. Removing a metatile reindexes or compacts — warn if any supertile still references it
+- Export emits one 4-byte row per defined metatile (not padded to 256 unless export format requires it)
+
 ### Metatile
 
-- 2×2 grid of **base tile indices** (4 bytes)
+- 2×2 grid of **base tile indices** (4 bytes per metatile)
 - Row-major order: top-left, top-right, bottom-left, bottom-right
+- Each cell value must be a valid tile index (0–255)
 
 ```asm
 METAS
     BYTE >01,>01,>01,>01   ; metatile 0
     BYTE >02,>02,>02,>02   ; metatile 1
+    ; ... up to 256 metatiles × 4 bytes ...
+METASEND
 ```
+
+### Supertile set
+
+- **Up to 256 supertiles** (indices 0–255); default names `ST00`–`STFF`
+- Add and remove supertiles in the supertile editor; block add when count would exceed 256
+- Indices are dense: `0 .. count-1`
+- Export emits 20 bytes per defined supertile
 
 ### Supertile
 
-- 4×5 grid of **metatile indices** (20 bytes)
+- 4×5 grid of **metatile indices** (20 bytes per supertile)
 - Row-major order: four columns across, five rows down
+- Each cell value must be a valid metatile index for the current project (`0 .. metatile_count-1`)
 
 ```asm
 SUPERS
@@ -78,6 +98,8 @@ SUPERS
     BYTE >02,>02,>01,>00   ; row 2
     BYTE >01,>01,>03,>03   ; row 3
     BYTE >00,>00,>00,>00   ; row 4
+    ; ... up to 256 supertiles × 20 bytes ...
+SUPERSEND
 ```
 
 ### Playfield (future)
@@ -97,7 +119,8 @@ src/
   metatile_editor.py     # Metatile editor window
   supertile_editor.py    # Supertile editor window
   tile_canvas.py         # 8×8 grid + per-row fg/bg swatch column
-  tile_picker.py         # 16×16 tile-picker window (256 thumbnails)
+  tile_picker.py         # 16×16 picker window for tiles (256 slots)
+  metatile_picker.py     # Picker for metatiles (up to 256; used by supertile editor)
   composite.py           # Resolve metatile/supertile preview pixels from project
   tile_model.py          # Tile / metatile / supertile data structures, validation
   palette.py             # TMS9918 color constants and swatch helpers
@@ -189,7 +212,7 @@ Supertile edit (slot k)
 
 Implementation requirements:
 
-- **One source of truth** — `Project` holds `tiles[256]`, `metatiles[]`, `supertiles[]`; editor windows never keep private copies of data they display.
+- **One source of truth** — `Project` holds `tiles[256]`, `metatiles[]` (max 256), `supertiles[]` (max 256); editor windows never keep private copies of data they display.
 - **Change notifications** — after any mutation, call `project.notify(ChangeEvent)` (e.g. `tile_changed(i)`, `metatile_changed(j)`, `supertile_changed(k)`). Listeners re-render only what they show.
 - **Composite resolution** — `composite.py` resolves metatile/supertile pixels by walking tile indices → pattern + line colors. Used by metatile/supertile windows and tile-picker thumbnails.
 - **Debouncing optional** — per-pixel tile drawing may batch notifications until mouse-release; color-table and index assignment changes notify immediately.
@@ -251,7 +274,8 @@ A separate window for choosing which of the 256 tileset slots to edit.
 - **Highlight:** clearly mark the currently active slot; optional hover shows index/name (`TIL00`–`TILFF`).
 - **Open from:** **Select Tile…** button (tileset mode sidebar) and/or **Tiles → Select Tile…** menu item.
 - **Status bar:** always show active tile index and name (e.g. `Tile 42 / TIL2A`).
-- **Reuse:** same picker when the metatile editor assigns a base-tile index — title differs (`Select Tile for Cell` vs `Select Tile to Edit`). Metatile picker for supertile cells is a separate control (list or grid of metatile thumbnails).
+- **Reuse:** same tile picker when the metatile editor assigns a base-tile index — title differs (`Select Tile for Cell` vs `Select Tile to Edit`).
+- **Metatile picker:** separate 16×16 thumbnail grid (or scrollable equivalent) for up to 256 defined metatiles; used when the supertile editor assigns a metatile to a cell.
 
 Thumbnail size should be readable but compact enough that the full 16×16 grid fits without scrolling on a typical display (e.g. 2× or 3× scale per pixel).
 
@@ -289,15 +313,15 @@ Build **one phase at a time**. After each phase, stop and report completion befo
 - Open **metatile editor** alongside tileset editor (both visible by default)
 - `project.notify` wiring: tile edits refresh metatile composites that reference the changed tile
 - 2×2 picker: each cell shows a base-tile preview; click to assign tile index via shared **16×16 tile picker**
-- Metatile list with add/remove/rename
+- Metatile list with add/remove/rename (max 256)
 - Live 16×16 composite preview
 
 ### Phase 5: Supertile editor window + full cascade
 
 - Open **supertile editor** alongside the other two editors
 - Tile edits cascade through metatiles into supertiles; metatile edits cascade into supertiles
-- 4×5 picker over metatile previews; click cell to assign metatile index
-- Supertile list with add/remove/rename
+- 4×5 picker over metatile previews; click cell to assign metatile index via **metatile picker**
+- Supertile list with add/remove/rename (max 256)
 - Live 64×80 composite preview
 
 ### Phase 6: Project I/O + export
@@ -359,11 +383,13 @@ Versioned JSON project file:
 ```
 
 - `tiles`: always 256 entries on save (pad with empty tiles if needed)
+- `metatiles`: 0–256 entries; reject load if more than 256
+- `supertiles`: 0–256 entries; reject load if more than 256
 - `pattern`: 8×8 grid of bit values `0` or `1`
-- `colors`: **required** — exactly 8 entries of `{fg, bg}` (one per scanline, top to bottom); each value 0–15
+- `colors`: **required** per tile — exactly 8 entries of `{fg, bg}` (one per scanline, top to bottom); each value 0–15
 - `cells`: indices into the parent level's table (metatile cells: 4; supertile cells: 20)
 - On load: pad missing `colors` to 8 rows with default `{fg: 15, bg: 1}`; coerce invalid pattern values to 0/1
-- Validate indices on load; reject or clamp with a visible warning
+- Validate indices on load: metatile cells → tile 0–255; supertile cells → metatile 0..`len(metatiles)-1`
 
 ## Export formats
 
@@ -385,17 +411,23 @@ COLORS
 
 METAS
     BYTE >01,>01,>01,>01
+    ; ... N metatiles × 4 bytes (N ≤ 256) ...
 
 SUPERS
     BYTE >03,>00,>00,>01
     BYTE >03,>04,>01,>02
-    ; ... 5 rows × 4 bytes ...
+    ; ... 5 rows × 4 bytes per supertile ...
+    ; ... M supertiles × 20 bytes (M ≤ 256) ...
 ```
 
-**Binary layout** for a full tileset export:
+**Binary layout** for a full export:
 
-1. Pattern table — 256 × 8 = 2048 bytes
-2. Color table — 256 × 8 = 2048 bytes
+| Block | Size |
+|-------|------|
+| Pattern table | 256 × 8 = 2048 bytes |
+| Color table | 256 × 8 = 2048 bytes |
+| Metatile table | N × 4 bytes (N = metatile count, max 256) |
+| Supertile table | M × 20 bytes (M = supertile count, max 256) |
 
 Label patterns (suggested defaults — adjust if user specifies otherwise):
 
@@ -422,7 +454,8 @@ Each editor window's export panel shows that level's data (and full-table export
 | Data model | `tile_model.py` | Structs, validation, deep copy helpers |
 | Compositing | `composite.py` | Metatile/supertile pixel resolution from tile data |
 | Canvas | `tile_canvas.py` | 8×8 tile grid + per-row fg/bg column |
-| Tile picker | `tile_picker.py` | 16×16 thumbnail grid window, selection callback |
+| Tile picker | `tile_picker.py` | 16×16 thumbnail grid for tile slots |
+| Metatile picker | `metatile_picker.py` | Thumbnail grid for defined metatiles (up to 256) |
 | Palette | `palette.py` | Color constants, swatch widgets |
 | Pattern bytes | `pattern_export.py` | 8×8 bitplane → 8-byte TMS9918 pattern encoding |
 | Color bytes | `color_export.py` | 8 `{fg, bg}` rows → 8-byte color-table encoding |
@@ -434,13 +467,14 @@ Each editor window's export panel shows that level's data (and full-table export
 
 Preserve unless the user explicitly changes product behavior:
 
-1. **Index integrity** — Metatile cells reference valid tile indices (0–255); supertile cells reference valid metatile indices. Clearing or overwriting a referenced tile must warn.
-2. **Fixed geometry** — Tileset = 256 slots; base = 8×8; metatile = 2×2; supertile = 4×5. Do not parameterize without user request.
-3. **Row-major order** — All cell arrays index left-to-right, top-to-bottom.
-4. **Pattern encoding** — Bitplane only (0/1 per pixel); MSB-left per row, 8 bytes per tile — must match VDP layout.
-5. **Color encoding** — Exactly 8 color bytes per tile; byte `n` = `(fg << 4) | bg` for row `n`; must match Graphics II color-table layout.
-6. **Deep copy** — Mutate snapshots via `copy.deepcopy` or dedicated helpers before commit.
-7. **Live cascade** — Editor windows read from `Project` only; never stale cached composites after upstream edits. Tests in `test_composite.py` cover invalidation logic without Tk.
+1. **Index integrity** — Metatile cells reference valid tile indices (0–255); supertile cells reference valid metatile indices (`0 .. metatile_count-1`). Clearing or overwriting a referenced tile, or deleting a referenced metatile, must warn.
+2. **Table sizes** — Tileset = exactly 256 slots; metatile set = 0–256; supertile set = 0–256. Block adds beyond 256.
+3. **Fixed geometry** — Base = 8×8; metatile = 2×2; supertile = 4×5. Do not parameterize without user request.
+4. **Row-major order** — All cell arrays index left-to-right, top-to-bottom.
+5. **Pattern encoding** — Bitplane only (0/1 per pixel); MSB-left per row, 8 bytes per tile — must match VDP layout.
+6. **Color encoding** — Exactly 8 color bytes per tile; byte `n` = `(fg << 4) | bg` for row `n`; must match Graphics II color-table layout.
+7. **Deep copy** — Mutate snapshots via `copy.deepcopy` or dedicated helpers before commit.
+8. **Live cascade** — Editor windows read from `Project` only; never stale cached composites after upstream edits. Tests in `test_composite.py` cover invalidation logic without Tk.
 
 ### Testing
 
@@ -475,7 +509,7 @@ Preserve unless the user explicitly changes product behavior:
 - Do not create markdown files the user did not ask for (except this file).
 - Do not skip running tests after substantive changes.
 - Do not break index references silently on delete — always warn.
-- Do not change the 256-tile / 2×2 / 4×5 geometry without user approval.
+- Do not change the 256-tile / 256-metatile / 256-supertile limits or 2×2 / 4×5 geometry without user approval.
 - Do not replace multi-window editors with a single mode-switching UI unless the user asks.
 - Do not let editor windows hold divergent copies of tile/metatile/supertile data.
 - Do not reference or depend on code, docs, or conventions from outside this repository in project files unless the user explicitly asks.
