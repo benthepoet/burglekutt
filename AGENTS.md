@@ -70,21 +70,43 @@ COLORS
 - **Up to 256 metatiles** (indices 0–255); default names `MT00`–`MTFF`
 - Add and remove metatiles in the metatile editor; block add when count would exceed 256
 - Indices are dense: `0 .. count-1`. Removing a metatile reindexes or compacts — warn if any supertile still references it
-- Export emits one 4-byte row per defined metatile (not padded to 256 unless export format requires it)
+- Export emits **5 bytes** per defined metatile: 1 header byte + 4 tile-index bytes (not padded to 256 unless export format requires it)
 
 ### Metatile
 
-- 2×2 grid of **base tile indices** (4 bytes per metatile)
-- Row-major order: top-left, top-right, bottom-left, bottom-right
-- Each cell value must be a valid tile index (0–255)
+Each metatile record is **5 bytes** in export order:
+
+| Byte | Field | Purpose |
+|------|-------|---------|
+| 0 | **Flags** | Collision/behavior type for the game engine |
+| 1–4 | **Cells** | 2×2 grid of base tile indices |
+
+**Cells** — row-major order: top-left, top-right, bottom-left, bottom-right. Each value must be a valid tile index (0–255).
+
+**Flags byte** — bitfield; multiple attributes can be set. The metatile editor exposes these as checkboxes (or equivalent). Refine bit meanings with the game engine as needed; default definitions:
+
+| Bit | Mask | Meaning |
+|-----|------|---------|
+| 0 | `>01` | **Solid** — blocks movement |
+| 1 | `>02` | **Hurt** — damages the player on contact |
+| 2 | `>04` | **Water** — swim/wade behavior |
+| 3 | `>08` | **Door** — doorway / transition trigger |
+| 4 | `>10` | **Stairs** — elevation change |
+| 5–7 | — | Reserved (0) |
+
+Example: solid rock = `>01`; lava (solid + hurt) = `>03`; open water = `>04`.
 
 ```asm
 METAS
-    BYTE >01,>01,>01,>01   ; metatile 0
-    BYTE >02,>02,>02,>02   ; metatile 1
-    ; ... up to 256 metatiles × 4 bytes ...
+    BYTE >01              ; metatile 0 flags: solid
+    BYTE >00,>00,>01,>00  ; metatile 0 tiles
+    BYTE >03              ; metatile 1 flags: solid + hurt
+    BYTE >02,>02,>02,>02  ; metatile 1 tiles
+    ; ... up to 256 metatiles × 5 bytes ...
 METASEND
 ```
+
+The game reads the flags byte at runtime for collision and interaction; graphics come from the four tile indices only.
 
 ### Supertile set
 
@@ -205,7 +227,7 @@ Canonical color indices for pattern, color-table, and UI swatches. Define RGB tu
 | Window | Primary canvas | Edits |
 |--------|----------------|-------|
 | **Tileset editor** | 8×8 grid + per-row fg/bg swatches | `tiles[i].pattern`, `tiles[i].colors[8]` |
-| **Metatile editor** | 16×16 composite preview + 2×2 cell picker | `metatiles[i].cells[4]` |
+| **Metatile editor** | 16×16 composite preview + 2×2 cell picker | `metatiles[i].flags`, `metatiles[i].cells[4]` |
 | **Supertile editor** | 64×80 composite preview + 4×5 cell picker | `supertiles[i].cells[20]` |
 
 On launch, open all three editor windows (and keep them open). Use a **Window** menu on each (or a small app coordinator) to raise/hide editors. Closing one editor must not exit the app unless it is the last window — prefer **File → Exit** to quit.
@@ -239,7 +261,7 @@ Implementation requirements:
 ### UI conventions
 
 - **Tileset window:** palette (left), tile canvas + export (center), tile index + **Select Tile…** (sidebar)
-- **Metatile window:** metatile list + add/remove/rename (left), 2×2 picker + composite + export (center)
+- **Metatile window:** metatile list + add/remove/rename (left), **flags/type controls**, 2×2 picker + composite + export (center)
 - **Supertile window:** supertile list + add/remove/rename (left), 4×5 picker + composite + export (center)
 - **Shared:** status bar per window showing that editor's active slot; **File** menu (New/Load/Save/Exit) on each window or one coordinator — must not desync project state
 - **No Mode menu** — replaced by **Window** menu (focus Tileset / Metatile / Supertile)
@@ -331,7 +353,8 @@ Build **one phase at a time**. After each phase, stop and report completion befo
 - Open **metatile editor** alongside tileset editor (both visible by default)
 - `project.notify` wiring: tile edits refresh metatile composites that reference the changed tile
 - 2×2 picker: each cell shows a base-tile preview; click to assign tile index via shared **16×16 tile picker**
-- Metatile list with add/remove/rename (max 256)
+- **Flags editor:** checkboxes (or toggles) for solid, hurt, water, door, stairs — writes `metatiles[i].flags`
+- Metatile list with add/remove/rename (max 256); show flags summary in list where helpful
 - Live 16×16 composite preview
 
 ### Phase 5: Supertile editor window + full cascade
@@ -447,6 +470,7 @@ Versioned JSON project file:
   "metatiles": [
     {
       "name": "MT00",
+      "flags": 1,
       "cells": [0, 0, 0, 0]
     }
   ],
@@ -468,6 +492,7 @@ Versioned JSON project file:
 - `supertiles`: 0–256 entries; reject load if more than 256
 - `pattern`: 8×8 grid of bit values `0` or `1`
 - `colors`: **required** per tile — exactly 8 entries of `{fg, bg}` (one per scanline, top to bottom); each value 0–15
+- `flags`: metatile header byte (0–255 bitfield); default `0`
 - `cells`: indices into the parent level's table (metatile cells: 4; supertile cells: 20)
 - On load: pad missing `colors` to 8 rows with default `{fg: 15, bg: 1}`; coerce invalid pattern values to 0/1
 - Validate indices on load: metatile cells → tile 0–255; supertile cells → metatile 0..`len(metatiles)-1`
@@ -491,8 +516,9 @@ COLORS
     ; ... 256 tiles × 8 bytes ...
 
 METAS
-    BYTE >01,>01,>01,>01
-    ; ... N metatiles × 4 bytes (N ≤ 256) ...
+    BYTE >01              ; flags
+    BYTE >00,>00,>01,>00  ; tiles
+    ; ... N metatiles × 5 bytes (N ≤ 256) ...
 
 SUPERS
     BYTE >03,>00,>00,>01
@@ -507,7 +533,7 @@ SUPERS
 |-------|------|
 | Pattern table | 256 × 8 = 2048 bytes |
 | Color table | 256 × 8 = 2048 bytes |
-| Metatile table | N × 4 bytes (N = metatile count, max 256) |
+| Metatile table | N × 5 bytes (N = metatile count, max 256; 1 flags + 4 tiles each) |
 | Supertile table | M × 20 bytes (M = supertile count, max 256) |
 
 Label patterns (suggested defaults — adjust if user specifies otherwise):
@@ -550,12 +576,13 @@ Preserve unless the user explicitly changes product behavior:
 
 1. **Index integrity** — Metatile cells reference valid tile indices (0–255); supertile cells reference valid metatile indices (`0 .. metatile_count-1`). Clearing or overwriting a referenced tile, or deleting a referenced metatile, must warn.
 2. **Table sizes** — Tileset = exactly 256 slots; metatile set = 0–256; supertile set = 0–256. Block adds beyond 256.
-3. **Fixed geometry** — Base = 8×8; metatile = 2×2; supertile = 4×5. Do not parameterize without user request.
-4. **Row-major order** — All cell arrays index left-to-right, top-to-bottom.
-5. **Pattern encoding** — Bitplane only (0/1 per pixel); MSB-left per row, 8 bytes per tile — must match VDP layout.
-6. **Color encoding** — Exactly 8 color bytes per tile; byte `n` = `(fg << 4) | bg` for row `n`; must match Graphics II color-table layout.
-7. **Deep copy** — Mutate snapshots via `copy.deepcopy` or dedicated helpers before commit.
-8. **Live cascade** — Editor windows read from `Project` only; never stale cached composites after upstream edits. Tests in `test_composite.py` cover invalidation logic without Tk.
+3. **Fixed geometry** — Base = 8×8; metatile = 2×2 tiles + 1 flags byte; supertile = 4×5. Do not parameterize without user request.
+4. **Metatile flags** — Every metatile has exactly one `flags` byte in export (leading byte). JSON stores `flags` as integer 0–255; UI maps to named toggles per bit table above.
+5. **Row-major order** — All cell arrays index left-to-right, top-to-bottom.
+6. **Pattern encoding** — Bitplane only (0/1 per pixel); MSB-left per row, 8 bytes per tile — must match VDP layout.
+7. **Color encoding** — Exactly 8 color bytes per tile; byte `n` = `(fg << 4) | bg` for row `n`; must match Graphics II color-table layout.
+8. **Deep copy** — Mutate snapshots via `copy.deepcopy` or dedicated helpers before commit.
+9. **Live cascade** — Editor windows read from `Project` only; never stale cached composites after upstream edits. Tests in `test_composite.py` cover invalidation logic without Tk.
 
 ### Testing
 
