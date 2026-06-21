@@ -6,11 +6,15 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from tile_model import (
     DEFAULT_TILE_NAME,
+    TILE_COUNT,
     TILE_SIZE,
     copy_tile,
     default_colors,
+    default_tileset,
     empty_pattern,
     empty_tile,
+    tile_name_for_index,
+    validate_tile_name,
 )
 
 
@@ -41,6 +45,22 @@ class TestTileModel(unittest.TestCase):
         copied["colors"][0]["fg"] = 3
         self.assertEqual(tile["pattern"][0][0], 0)
         self.assertEqual(tile["colors"][0]["fg"], 15)
+
+    def test_tile_name_for_index(self):
+        self.assertEqual(tile_name_for_index(0), "TIL00")
+        self.assertEqual(tile_name_for_index(42), "TIL2A")
+        self.assertEqual(tile_name_for_index(255), "TILFF")
+
+    def test_default_tileset_has_256_named_slots(self):
+        tiles = default_tileset()
+        self.assertEqual(len(tiles), TILE_COUNT)
+        self.assertEqual(tiles[0]["name"], "TIL00")
+        self.assertEqual(tiles[255]["name"], "TILFF")
+
+    def test_validate_tile_name(self):
+        self.assertEqual(validate_tile_name("  ROCK  "), "ROCK")
+        with self.assertRaises(ValueError):
+            validate_tile_name("   ")
 
 
 if __name__ == "__main__":

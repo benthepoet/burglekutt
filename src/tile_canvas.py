@@ -119,7 +119,7 @@ class TileCanvas(tk.Frame):
             fg.pack(side=tk.LEFT, padx=(SWATCH_SIDE_PADDING, SWATCH_GAP // 2))
             fg.pack_propagate(False)
             fg.bind(
-                "<Button-1>",
+                "<ButtonRelease-1>",
                 lambda event, swatch_row=row: self._on_swatch_click(swatch_row, "fg", event),
             )
 
@@ -134,7 +134,7 @@ class TileCanvas(tk.Frame):
             bg.pack(side=tk.LEFT, padx=(SWATCH_GAP // 2, SWATCH_SIDE_PADDING))
             bg.pack_propagate(False)
             bg.bind(
-                "<Button-1>",
+                "<ButtonRelease-1>",
                 lambda event, swatch_row=row: self._on_swatch_click(swatch_row, "bg", event),
             )
 

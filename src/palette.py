@@ -159,6 +159,7 @@ class PalettePopup:
         self._on_color_pick = on_color_pick
         self._on_close = on_close
         self._closed = False
+        self._picks_enabled = False
         self._window = tk.Toplevel(parent)
         channel_label = "foreground" if channel == "fg" else "background"
         self._window.title(f"Row {row} {channel_label}")
@@ -188,6 +189,10 @@ class PalettePopup:
 
         self._window.update_idletasks()
         self._place_window(x_root, y_root)
+        self._window.after_idle(self._enable_picks)
+
+    def _enable_picks(self):
+        self._picks_enabled = True
 
     def _place_window(self, x_root, y_root):
         width = self._window.winfo_width()
@@ -207,7 +212,7 @@ class PalettePopup:
         self._window.focus_force()
 
     def _handle_pick(self, color_index):
-        if self._closed:
+        if self._closed or not self._picks_enabled:
             return
         self._window.after_idle(lambda: self._apply_pick(color_index))
 

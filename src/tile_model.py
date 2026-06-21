@@ -3,9 +3,11 @@
 import copy
 
 TILE_SIZE = 8
+TILE_COUNT = 256
 DEFAULT_FG = 15
 DEFAULT_BG = 1
 DEFAULT_TILE_NAME = "TIL00"
+MAX_TILE_NAME_LEN = 32
 
 
 def empty_pattern():
@@ -30,3 +32,27 @@ def empty_tile(name=DEFAULT_TILE_NAME):
 def copy_tile(tile):
     """Return a deep copy of a tile dict."""
     return copy.deepcopy(tile)
+
+
+def tile_name_for_index(index):
+    """Return the default tile name for a slot index (TIL00..TILFF)."""
+    if index < 0 or index >= TILE_COUNT:
+        raise ValueError("tile index out of range")
+    return "TIL{:02X}".format(index)
+
+
+def validate_tile_name(name):
+    """Return a stripped tile name or raise ValueError."""
+    if not isinstance(name, str):
+        raise ValueError("tile name must be a string")
+    name = name.strip()
+    if not name:
+        raise ValueError("tile name must not be empty")
+    if len(name) > MAX_TILE_NAME_LEN:
+        raise ValueError("tile name is too long")
+    return name
+
+
+def default_tileset():
+    """Return 256 empty tiles with default slot names."""
+    return [empty_tile(tile_name_for_index(index)) for index in range(TILE_COUNT)]

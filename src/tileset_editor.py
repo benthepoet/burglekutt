@@ -1,13 +1,14 @@
 """Tileset editor window."""
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, simpledialog, ttk
 
 import theme
 from palette import TI_COLORS, PalettePopup
 from project import ChangeEvent
 from tile_canvas import TILE_PIXEL_SCALE_MIN, TileCanvas
 from tile_model import copy_tile
+from tile_picker import TilePickerWindow
 from undo_stack import UndoStack
 
 
@@ -19,10 +20,12 @@ class TilesetEditorWindow:
         self._color_target_row = None
         self._color_target_channel = None
         self._palette_popup = None
+        self._tile_picker = None
+        self._assign_picker = None
 
         self.root.title("burglekutt — Tileset")
         min_canvas = 8 * TILE_PIXEL_SCALE_MIN
-        self.root.minsize(min_canvas + 80, min_canvas + 120)
+        self.root.minsize(min_canvas + 200, min_canvas + 120)
 
         self._window_bg = theme.TILESET_WINDOW_BG
         theme.apply_window_theme(self.root, self._window_bg)
@@ -42,6 +45,7 @@ class TilesetEditorWindow:
 
         self._update_status()
         self._update_edit_menu_state()
+        self._update_tile_sidebar()
 
     def _build_menus(self):
         menubar = tk.Menu(self.root)
@@ -61,10 +65,16 @@ class TilesetEditorWindow:
         self._edit_menu.add_command(label="Redo", accelerator="Ctrl+Y", command=self._redo)
         self._edit_menu.add_separator()
         self._edit_menu.add_command(label="Clear Tile", command=self._clear_tile)
+        self._edit_menu.add_command(label="Duplicate to…", command=self._duplicate_tile)
+
+        tiles_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Tiles", menu=tiles_menu)
+        tiles_menu.add_command(label="Select Tile…", command=self._open_tile_picker)
 
         window_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Window", menu=window_menu)
         window_menu.add_command(label="Tileset", command=self._focus_window)
+        window_menu.add_command(label="Tile Picker", command=self._open_tile_picker)
         window_menu.add_command(
             label="Metatile (Phase 4)",
             state=tk.DISABLED,
@@ -92,6 +102,27 @@ class TilesetEditorWindow:
         self.tile_canvas.on_swatch_select(self._on_swatch_select)
         self.tile_canvas.on_pixel_change(self._on_pixel_change)
 
+        sidebar = ttk.Labelframe(content, text="Tile", padding=8)
+        sidebar.pack(side=tk.LEFT, fill=tk.Y, padx=(8, 0))
+
+        self._tile_index_label = ttk.Label(sidebar, text="Index: 0")
+        self._tile_index_label.pack(anchor=tk.W, pady=(0, 4))
+
+        self._tile_name_label = ttk.Label(sidebar, text="Name: TIL00")
+        self._tile_name_label.pack(anchor=tk.W, pady=(0, 8))
+
+        ttk.Button(sidebar, text="Select Tile…", command=self._open_tile_picker).pack(
+            fill=tk.X,
+            pady=(0, 4),
+        )
+        ttk.Button(sidebar, text="Rename…", command=self._rename_tile).pack(
+            fill=tk.X,
+            pady=(0, 4),
+        )
+        ttk.Button(sidebar, text="Duplicate to…", command=self._duplicate_tile).pack(
+            fill=tk.X,
+        )
+
     def _build_status_bar(self):
         status_frame = tk.Frame(self._main_frame, bg=self._window_bg)
         theme.register_frame(status_frame)
@@ -107,6 +138,64 @@ class TilesetEditorWindow:
 
     def _push_undo_snapshot(self):
         self.undo_stack.push(copy_tile(self.project.get_active_tile()))
+
+    def _open_tile_picker(self, event=None):
+        if self._assign_picker is not None:
+            self._assign_picker.focus()
+            return
+        if self._tile_picker is None:
+            self._tile_picker = TilePickerWindow(
+                self.root,
+                self.project,
+                mode="edit",
+                on_close=self._on_tile_picker_closed,
+            )
+        self._tile_picker.focus()
+
+    def _on_tile_picker_closed(self):
+        self._tile_picker = None
+
+    def _duplicate_tile(self, event=None):
+        if self._assign_picker is not None:
+            self._assign_picker.focus()
+            return
+
+        def on_destination_selected(dst_index):
+            self._assign_picker = None
+            if dst_index == self.project.active_tile_index:
+                return
+            self.project.duplicate_tile(self.project.active_tile_index, dst_index)
+            self.project.set_active_tile_index(dst_index)
+
+        self._assign_picker = TilePickerWindow(
+            self.root,
+            self.project,
+            mode="assign",
+            title="Duplicate to Tile",
+            on_select=on_destination_selected,
+            on_close=self._on_assign_picker_closed,
+        )
+        self._assign_picker.focus()
+
+    def _on_assign_picker_closed(self):
+        self._assign_picker = None
+
+    def _rename_tile(self, event=None):
+        tile = self.project.get_active_tile()
+        new_name = simpledialog.askstring(
+            "Rename Tile",
+            "Tile name:",
+            initialvalue=tile["name"],
+            parent=self.root,
+        )
+        if new_name is None:
+            return
+        try:
+            self.project.rename_tile(self.project.active_tile_index, new_name)
+        except ValueError as exc:
+            messagebox.showerror("Rename Tile", str(exc), parent=self.root)
+            return
+        self._update_tile_sidebar()
 
     def _on_pixel_change(self, row, col, bit, is_stroke_start):
         if is_stroke_start:
@@ -175,29 +264,43 @@ class TilesetEditorWindow:
         self._edit_menu.entryconfig(0, state=undo_state)
         self._edit_menu.entryconfig(1, state=redo_state)
 
+    def _update_tile_sidebar(self):
+        tile = self.project.get_active_tile()
+        index = self.project.active_tile_index
+        self._tile_index_label.config(text="Index: {}".format(index))
+        self._tile_name_label.config(text="Name: {}".format(tile["name"]))
+
     def _update_status(self, color_index=None):
         tile = self.project.get_active_tile()
         index = self.project.active_tile_index
-        parts = [f"Tile {index} / {tile['name']}"]
+        parts = ["Tile {} / {}".format(index, tile["name"])]
 
         if self._color_target_row is not None and self._color_target_channel is not None:
             channel_label = "fg" if self._color_target_channel == "fg" else "bg"
-            parts.append(f"Row {self._color_target_row} {channel_label}")
+            parts.append("Row {} {}".format(self._color_target_row, channel_label))
             if color_index is not None:
-                parts.append(f"Color {color_index} ({TI_COLORS[color_index]})")
+                parts.append("Color {} ({})".format(color_index, TI_COLORS[color_index]))
         else:
             parts.append("Select a row fg/bg swatch")
 
         self._status_label.config(text="  |  ".join(parts))
 
     def _on_project_change(self, event):
-        if event.kind == ChangeEvent.TILE_CHANGED:
+        if event.kind == ChangeEvent.ACTIVE_TILE_CHANGED:
+            self.undo_stack.clear()
             self.tile_canvas.refresh()
-            if self._color_target_row is not None and self._color_target_channel is not None:
-                self.tile_canvas.set_active_target(
-                    self._color_target_row,
-                    self._color_target_channel,
-                )
+            self._update_tile_sidebar()
+            self._update_status()
+            self._update_edit_menu_state()
+        elif event.kind == ChangeEvent.TILE_CHANGED:
+            if event.index == self.project.active_tile_index:
+                self.tile_canvas.refresh()
+                if self._color_target_row is not None and self._color_target_channel is not None:
+                    self.tile_canvas.set_active_target(
+                        self._color_target_row,
+                        self._color_target_channel,
+                    )
+            self._update_tile_sidebar()
             self._update_status()
 
     def _focus_window(self):
@@ -210,11 +313,17 @@ class TilesetEditorWindow:
     def _show_about(self, event=None):
         messagebox.showinfo(
             "About burglekutt",
-            "burglekutt — TI-99 tile editor\nPhase 2: palette and drawing",
+            "burglekutt — TI-99 tile editor\nPhase 3: tileset management",
         )
 
     def _on_close(self, event=None):
         self._close_palette_popup()
+        if self._tile_picker is not None:
+            self._tile_picker.close()
+            self._tile_picker = None
+        if self._assign_picker is not None:
+            self._assign_picker.close()
+            self._assign_picker = None
         self.project.remove_listener(self._on_project_change)
         self.root.quit()
         self.root.destroy()
