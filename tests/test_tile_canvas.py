@@ -16,6 +16,8 @@ from tile_canvas import (
     swatch_column_width,
     swatch_layout,
     swatch_size,
+    zoom_in,
+    zoom_out,
 )
 from tile_model import TILE_SIZE
 
@@ -51,6 +53,14 @@ class TestTileCanvas(unittest.TestCase):
         self.assertEqual(fg_x, SWATCH_SIDE_PADDING)
         self.assertEqual(bg_x, SWATCH_SIDE_PADDING + size + SWATCH_GAP)
         self.assertEqual(swatch_column_width(32), 2 * SWATCH_SIDE_PADDING + 2 * size + SWATCH_GAP)
+
+    def test_zoom_in_steps_until_max(self):
+        self.assertEqual(zoom_in(32), 36)
+        self.assertEqual(zoom_in(48), 48)
+
+    def test_zoom_out_steps_until_min(self):
+        self.assertEqual(zoom_out(32), 28)
+        self.assertEqual(zoom_out(24), 24)
 
 
 if __name__ == "__main__":

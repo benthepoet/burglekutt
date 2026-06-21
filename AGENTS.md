@@ -8,8 +8,8 @@ This repository contains **two apps**, developed in sequence:
 
 | App | Entry point | Status |
 |-----|-------------|--------|
-| **Tile editor** | `python3 src/editor.py` | **Current work** — tileset, metatile, supertile authoring |
-| **Map/screen editor** | `python3 src/map_editor.py` | **Follow-on** — after tile editor is complete |
+| **Tile editor** | `python3 src/editor.py` | **Complete** — tileset, metatile, supertile authoring (Phases 1–7) |
+| **Map/screen editor** | `python3 src/map_editor.py` | **Follow-on** — not started; begin only when user asks |
 
 The tile editor is a desktop app with **three simultaneous windows** (tileset, metatile, supertile). Edits propagate downstream live — change a base tile and every metatile/supertile that references it updates immediately.
 
@@ -27,9 +27,9 @@ The editor must produce data the game can consume directly — **pattern bytes**
 - **Language:** Python 3.6+ (stdlib only — no pip dependencies)
 - **UI:** Tkinter / ttk
 
-User-facing docs belong in `README.md` (create when asked). This file is the agent spec. All conventions for palette, export templates, project JSON, and module layering are defined here and in this repository.
+User-facing docs live in `README.md`. This file is the agent spec. All conventions for palette, export formats, project JSON, and module layering are defined here and in this repository.
 
-**Scope rule:** Implement tile-editor phases first. Do not start map/screen editor work until tile-editor phases are complete (through Phase 7 Polish) unless the user explicitly says otherwise.
+**Scope rule:** Tile editor Phases 1–7 are **complete**. Do not start map/screen editor work unless the user explicitly asks.
 
 ## Target game data shapes
 
@@ -135,45 +135,48 @@ SUPERSEND
 
 Screen layout and overworld map editing are **out of scope** for the tile editor. They belong to the map/screen editor app (see below). Each supertile covers 8×8 characters (64×64 pixels) and is the building block that app places on playfields.
 
-## Repository layout (target)
+## Repository layout
 
-Greenfield repo — grow into this structure incrementally:
+Current structure (tile editor complete):
 
 ```
 src/
-  # Tile editor app (current)
-  editor.py              # Tile editor entry: Project + three editor windows
+  # Tile editor app
+  editor.py              # App coordinator: Project + three editor windows
   project.py             # Graphics project state + change notifications
+  project_io.py          # JSON save/load (version 1)
   tileset_editor.py      # Tileset editor window
   metatile_editor.py     # Metatile editor window
   supertile_editor.py    # Supertile editor window
   tile_canvas.py         # 8×8 grid + per-row fg/bg swatch column
   tile_picker.py         # 16×16 picker window for tiles (256 slots)
-  metatile_picker.py     # Picker for metatiles (up to 256; used by supertile editor)
-  composite.py           # Resolve metatile/supertile preview pixels (shared)
+  metatile_picker.py     # Picker for metatiles (up to 256)
+  composite.py           # Resolve metatile/supertile preview pixels
+  pixel_canvas.py        # PhotoImage rendering for composites/thumbnails
   tile_model.py          # Tile / metatile / supertile structs, validation
-  palette.py             # TMS9918 color constants and swatch helpers
-  theme.py               # Per-window backgrounds, shared chrome, ttk styles
+  palette.py             # TMS9918 color constants, palette popup/panel
+  theme.py               # Per-window backgrounds, namespaced ttk styles
+  undo_stack.py          # Per-tile undo/redo stack
+  line_color_dialogs.py  # Fill all rows / copy row colors dialogs
+  shortcuts.py           # Keyboard shortcut bindings + help text
+  export_preview.py      # On-demand export preview window
   pattern_export.py      # 8×8 bitplane → 8 pattern bytes
   color_export.py        # Per-line fg/bg → 8 color-table bytes
   asm_export.py          # Assembly text rendering
   asm_format_schema.py   # Load export format directories
   binary_export.py       # Raw byte output
 
-  # Map/screen editor app (follow-on — add after tile editor is complete)
-  map_editor.py          # Map editor entry: screen + world windows
-  map_model.py           # Screen layouts, world grid, connections
-  screen_editor.py       # Single-screen playfield editor window
-  world_editor.py        # Overworld / screen-link editor window
+  # Map/screen editor (follow-on — not implemented)
+  map_editor.py
+  map_model.py
+  screen_editor.py
+  world_editor.py
 
 formats/
-  ti99_default/          # TI-99 BYTE export (default)
-  generic_db/            # Alternate db/$XX style
+  ti99_default/          # TI-99 BYTE export dialect (format.json)
 
 tests/
   test_*.py              # unittest suite (no pytest)
-
-docs/                    # Optional design notes (only when user asks)
 ```
 
 Keep business logic out of `editor.py` when it can live in pure, testable modules.
@@ -255,16 +258,16 @@ Implementation requirements:
 - **One source of truth** — `Project` holds `tiles[256]`, `metatiles[]` (max 256), `supertiles[]` (max 256); editor windows never keep private copies of data they display.
 - **Change notifications** — after any mutation, call `project.notify(ChangeEvent)` (e.g. `tile_changed(i)`, `metatile_changed(j)`, `supertile_changed(k)`). Listeners re-render only what they show.
 - **Composite resolution** — `composite.py` resolves metatile/supertile pixels by walking tile indices → pattern + line colors. Used by metatile/supertile windows and tile-picker thumbnails.
-- **Debouncing optional** — per-pixel tile drawing may batch notifications until mouse-release; color-table and index assignment changes notify immediately.
-- **Export panels** — each editor window has its own live ASM/binary panel for its level; all panels update when relevant data changes.
+- **Debouncing** — per-pixel tile drawing batches notifications until mouse-release; color-table and index assignment changes notify immediately.
+- **Export** — **Export** menu on each editor opens an on-demand **preview window** (assembly or binary). User reviews output there before copy/save; no embedded live export panels.
 
 ### UI conventions
 
-- **Tileset window:** palette (left), tile canvas + export (center), tile index + **Select Tile…** (sidebar)
-- **Metatile window:** metatile list + add/remove/rename (left), **flags/type controls**, 2×2 picker + composite + export (center)
-- **Supertile window:** supertile list + add/remove/rename (left), 4×4 picker + composite + export (center)
-- **Shared:** status bar per window showing that editor's active slot; **File** menu (New/Load/Save/Exit) on each window or one coordinator — must not desync project state
-- **No Mode menu** — replaced by **Window** menu (focus Tileset / Metatile / Supertile)
+- **Tileset window:** tile canvas (center-left), tile index sidebar (right); per-row fg/bg swatches open palette popup; **Colors** menu for bulk line-color tools; **View** menu for zoom
+- **Metatile window:** metatile list + add/remove/rename + flags (left), composite + 2×2 cell picker (center/right)
+- **Supertile window:** supertile list + add/remove/rename (left), composite + 4×4 cell picker (center/right)
+- **Shared:** status bar per window; **File** menu (New/Load/Save/Exit) on each window via app coordinator; **Export** menu; **Window** menu; **Help → Keyboard Shortcuts…** + About
+- **No Mode menu** — use **Window** menu (focus Tileset / Metatile / Supertile)
 
 ### Visual theme
 
@@ -384,7 +387,7 @@ A separate window for choosing which of the 256 tileset slots to edit.
 
 ## Tile editor — development phases
 
-Build **one phase at a time**. After each phase, stop and report completion before starting the next unless the user says to continue.
+Phases 1–7 are **complete** (historical checklist). New work should target map editor or user-requested changes — do not re-implement completed phases unless fixing regressions.
 
 ### Phase 1: Shell + tileset canvas
 
@@ -399,7 +402,7 @@ Build **one phase at a time**. After each phase, stop and report completion befo
 
 ### Phase 2: Palette + drawing + line colors
 
-- TMS9918 palette sidebar (left) for choosing colors
+- TMS9918 palette popup (opened from per-row fg/bg swatches) for choosing colors
 - Tile canvas: 8×8 grid with **two fg/bg swatch squares per row** on the right, aligned to scanlines
 - Click swatch → palette click assigns fg or bg for that row; default all rows to fg=15, bg=1
 - Left/right mouse sets pattern bits (1/0); grid renders resolved TMS9918 colors per row
@@ -430,20 +433,22 @@ Build **one phase at a time**. After each phase, stop and report completion befo
 - Supertile list with add/remove/rename (max 256)
 - Live 64×64 composite preview
 
-### Phase 6: Project I/O + export
+### Phase 6: Project I/O + export — **done**
 
-- Save/load JSON project (see schema below)
-- Assembly export via `formats/` templates (`BYTE >xx,>yy,…`)
-- Binary export for raw pattern bytes, color-table bytes, and index tables
+- Save/load JSON project (version 1; see schema below)
+- Assembly export via `formats/ti99_default/` dialect (`BYTE >xx,…`)
+- Binary export for pattern/color tables and index tables
 - Separate export sections: `PATTERNS`, `COLORS`, `METAS`, `SUPERS`
+- **On-demand export preview** — Export menu opens preview window; copy/save only after review
 
-### Phase 7: Polish
+### Phase 7: Polish — **done**
 
-- Keyboard shortcuts; verify all windows use `theme.py` consistently
-- Bulk line-color tools (copy row colors, fill all rows, apply fg/bg to selection)
-- Help → About
+- **Keyboard shortcuts** — app-wide file/window/export bindings in `shortcuts.py`; tileset editing shortcuts; list shortcuts (F2 rename, Delete remove); Help → Keyboard Shortcuts…
+- **Bulk line-color tools** — **Fill All Rows…** (dialog: pick fg/bg, apply to all scanlines); **Copy Row Colors…** (one source row → many destinations). No “apply fg/bg to selection” tool.
+- **View → Zoom** on tileset editor (+/− keys when canvas focused)
+- Per-window namespaced `theme.py` ttk styles; Help → About
 
-**Tile editor complete** when Phase 7 is done. Map/screen editor work starts as a separate follow-on (below).
+**Tile editor is complete.** Map/screen editor work starts as a separate follow-on (below) when scoped.
 
 ## Follow-on: map & screen editor
 
@@ -564,10 +569,10 @@ Versioned JSON project file:
 
 ## Export formats
 
-ASM output is driven by template directories in `formats/`. Each format is a folder containing:
+ASM output is driven by format directories in `formats/`. Each format is a folder containing:
 
 - `format.json` — dialect (`BYTE`, `>xx` hex prefix, indent, comment prefix) and label patterns
-- `*.tpl` — `str.format()` templates rendered by `asm_export.py`
+- Optional `*.tpl` — future `str.format()` templates; current `asm_export.py` renders from `format.json` in Python
 
 Default `ti99_default` should emit game-ready blocks:
 
@@ -612,7 +617,7 @@ Label patterns (suggested defaults — adjust if user specifies otherwise):
 | Metatile block | `{meta_name}` or `MT_{index:02d}` |
 | Supertile block | `{super_name}` or `ST_{index:02d}` |
 
-Each editor window's export panel shows that level's data (and full-table export where appropriate). Provide **Copy Assembly** and **Save Binary…** buttons on each panel.
+Each editor's **Export** menu opens a preview window for that level's data (full table: tileset `PATTERNS`+`COLORS`, all `METAS`, all `SUPERS`). Preview provides **Copy Assembly**, **Save Assembly…** / **Save Binary…**, and **Close**. Shortcuts: **Ctrl+Shift+A** / **Ctrl+Shift+B** open preview; **Ctrl+S** saves from preview.
 
 ## Architecture guidelines
 
@@ -620,21 +625,27 @@ Each editor window's export panel shows that level's data (and full-table export
 
 | Layer | Module | Responsibility |
 |-------|--------|----------------|
-| App entry | `editor.py` | Create `Project`, open all editor windows, app lifecycle |
+| App entry | `editor.py` | Create `Project`, open all editor windows, app lifecycle, app-wide shortcuts |
 | Shared state | `project.py` | Single project, mutations, `notify()` / listener registry |
+| Project I/O | `project_io.py` | JSON save/load, normalization on load |
 | Editors | `tileset_editor.py`, `metatile_editor.py`, `supertile_editor.py` | One window each; subscribe to project changes |
 | Data model | `tile_model.py` | Structs, validation, deep copy helpers |
 | Compositing | `composite.py` | Metatile/supertile pixel resolution from tile data |
+| Rendering | `pixel_canvas.py` | Fast PhotoImage/PPM grid drawing for previews |
 | Canvas | `tile_canvas.py` | 8×8 tile grid + per-row fg/bg column |
 | Tile picker | `tile_picker.py` | 16×16 grid at `PICKER_TILE_SCALE_*`; accent border on active slot |
 | Metatile picker | `metatile_picker.py` | Thumbnail grid for defined metatiles (up to 256) |
-| Theme | `theme.py` | Per-window tints, shared chrome, `ttk` style setup |
-| Palette | `palette.py` | TMS9918 color constants, swatch widgets |
+| Theme | `theme.py` | Per-window tints, namespaced ttk styles |
+| Palette | `palette.py` | TMS9918 color constants, palette popup/panel |
+| Line colors | `line_color_dialogs.py` | Fill-all-rows and copy-row-colors dialogs |
+| Shortcuts | `shortcuts.py` | `bind_app_shortcuts`, per-editor bindings, help text |
+| Export UI | `export_preview.py` | On-demand assembly/binary preview window |
 | Pattern bytes | `pattern_export.py` | 8×8 bitplane → 8-byte TMS9918 pattern encoding |
 | Color bytes | `color_export.py` | 8 `{fg, bg}` rows → 8-byte color-table encoding |
 | ASM export | `asm_export.py` | Pure rendering from model dicts |
-| Formats | `asm_format_schema.py` | Scan `formats/*/format.json`, load `.tpl` |
+| Formats | `asm_format_schema.py` | Scan `formats/*/format.json` |
 | Binary | `binary_export.py` | Raw bytes for patterns and index tables |
+| Undo | `undo_stack.py` | Per-tile undo/redo stack (tileset editor) |
 
 ### Data invariants
 
@@ -657,15 +668,26 @@ Preserve unless the user explicitly changes product behavior:
 - Headless UI tests: create editor with `create_ui=False`, `root.withdraw()`, destroy in `tearDown`
 - Pure logic (pattern encoding, index validation, export text) must have tests without Tk
 
-| Area | Test file (create as needed) |
-|------|------------------------------|
+| Area | Test file |
+|------|-----------|
 | Pattern byte encoding | `test_pattern_export.py` |
 | Color byte encoding | `test_color_export.py` |
 | Model validation | `test_tile_model.py` |
 | Metatile/supertile composition | `test_composite.py` |
 | ASM export | `test_asm_export.py` |
-| Format templates | `test_asm_format.py` |
+| Format dialect | `test_asm_format.py` |
 | Binary export | `test_binary_export.py` |
+| Project I/O | `test_project_io.py` |
+| Export preview helpers | `test_export_preview.py` |
+| Line color batch ops | `test_line_colors.py` |
+| Line color dialogs | `test_line_color_dialogs.py` |
+| Tile canvas geometry | `test_tile_canvas.py` |
+| Tile picker | `test_tile_picker.py` |
+| Palette | `test_palette.py` |
+| Pixel canvas | `test_pixel_canvas.py` |
+| Project mutations | `test_project.py` |
+| Theme styles | `test_theme.py` |
+| Undo stack | `test_undo_stack.py` |
 
 ## Coding guidelines
 
@@ -673,21 +695,21 @@ Preserve unless the user explicitly changes product behavior:
 - **No new dependencies** — Stdlib only (Tkinter, json, unittest, copy, os).
 - **Naming** — `snake_case`, private helpers prefixed `_`, constants `UPPER_SNAKE`.
 - **Tk callbacks** — Handlers bound to keys/protocols accept `event=None`.
-- **UI refresh** — Mutate via `Project` methods, then `notify()`. Each listener updates list → canvas → export panel → status bar. Downstream windows must subscribe, not poll on focus.
+- **UI refresh** — Mutate via `Project` methods, then `notify()`. Each listener updates list → canvas → status bar. Downstream windows must subscribe, not poll on focus.
 - **Reuse** — Share helpers across modules in this repo (`palette.py`, `pattern_export.py`, `color_export.py`, `composite.py`) rather than duplicating logic in editor windows.
 
 ## What not to do
 
 - Do not add pip/package dependencies without explicit user approval.
 - Do not introduce Pygame, Pillow, Qt, or web UI frameworks.
-- Do not create markdown files the user did not ask for (except this file).
+- Do not create markdown files the user did not ask for (except `AGENTS.md` and `README.md`).
 - Do not skip running tests after substantive changes.
 - Do not break index references silently on delete — always warn.
 - Do not change the 256-tile / 256-metatile / 256-supertile limits or 2×2 / 4×4 geometry without user approval.
 - Do not replace multi-window editors with a single mode-switching UI unless the user asks.
 - Do not let editor windows hold divergent copies of tile/metatile/supertile data.
 - Do not reference or depend on code, docs, or conventions from outside this repository in project files unless the user explicitly asks.
-- Do not implement map/screen editor features during tile-editor phases unless the user explicitly asks.
+- Do not implement map/screen editor features unless the user explicitly asks.
 - Do not ship a tile draw canvas smaller than `TILE_PIXEL_SCALE_MIN` — pixel editing must remain practical.
 
 ## License

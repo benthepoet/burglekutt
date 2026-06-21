@@ -3,6 +3,7 @@
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 
+import shortcuts
 import theme
 from composite import metatile_references_tile, resolve_metatile_pixels, resolve_tile_pixels
 from export_preview import MODE_ASSEMBLY, MODE_BINARY, SCOPE_METATILE, show_export_preview
@@ -54,6 +55,7 @@ class MetatileEditorWindow:
         self.project.add_listener(self._on_project_change)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.bind("<FocusIn>", self._on_focus)
+        self._bind_shortcuts()
 
         self._refresh_metatile_list()
         self._refresh_active_metatile()
@@ -64,31 +66,65 @@ class MetatileEditorWindow:
 
         file_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="File", menu=file_menu)
-        file_menu.add_command(label="New", command=self._new_project)
-        file_menu.add_command(label="Load Project", command=self._load_project)
-        file_menu.add_command(label="Save Project", command=self._save_project)
+        file_menu.add_command(
+            label="New",
+            accelerator="Ctrl+N",
+            command=self._new_project,
+        )
+        file_menu.add_command(
+            label="Load Project",
+            accelerator="Ctrl+O",
+            command=self._load_project,
+        )
+        file_menu.add_command(
+            label="Save Project",
+            accelerator="Ctrl+S",
+            command=self._save_project,
+        )
         file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self._exit_app)
+        file_menu.add_command(
+            label="Exit",
+            accelerator="Ctrl+Q",
+            command=self._exit_app,
+        )
 
         export_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Export", menu=export_menu)
         export_menu.add_command(
             label="Save Assembly…",
+            accelerator="Ctrl+Shift+A",
             command=self._preview_assembly,
         )
         export_menu.add_command(
             label="Save Binary…",
+            accelerator="Ctrl+Shift+B",
             command=self._preview_binary,
         )
 
         window_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Window", menu=window_menu)
-        window_menu.add_command(label="Tileset", command=self._focus_tileset)
-        window_menu.add_command(label="Metatile", command=self._focus_metatile)
-        window_menu.add_command(label="Supertile", command=self._focus_supertile)
+        window_menu.add_command(
+            label="Tileset",
+            accelerator="Ctrl+1",
+            command=self._focus_tileset,
+        )
+        window_menu.add_command(
+            label="Metatile",
+            accelerator="Ctrl+2",
+            command=self._focus_metatile,
+        )
+        window_menu.add_command(
+            label="Supertile",
+            accelerator="Ctrl+3",
+            command=self._focus_supertile,
+        )
 
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(
+            label="Keyboard Shortcuts…",
+            command=self._show_shortcuts,
+        )
         help_menu.add_command(label="About", command=self._show_about)
 
     def _build_layout(self):
@@ -123,6 +159,8 @@ class MetatileEditorWindow:
         self._metatile_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
         list_scroll.config(command=self._metatile_list.yview)
         self._metatile_list.bind("<<ListboxSelect>>", self._on_list_select)
+        self._metatile_list.bind("<F2>", self._rename_metatile)
+        self._metatile_list.bind("<Delete>", self._remove_metatile)
 
         buttons = ttk.Frame(left, style=self._styles.frame)
         buttons.pack(fill=tk.X, pady=(8, 0))
@@ -303,10 +341,22 @@ class MetatileEditorWindow:
         if self.coordinator is not None:
             self.coordinator.save_project_dialog()
 
+    def _bind_shortcuts(self):
+        shortcuts.bind_common(self.root, self.coordinator)
+
+    def _show_shortcuts(self, _event=None):
+        text = "\n".join(
+            [
+                shortcuts.COMMON_HELP.strip(),
+                shortcuts.METATILE_HELP.strip(),
+            ]
+        )
+        shortcuts.show_shortcuts_help(self.root, text)
+
     def _show_about(self, _event=None):
         messagebox.showinfo(
             "About burglekutt",
-            "burglekutt — TI-99 tile editor\nPhase 6: project I/O and export",
+            "burglekutt — TI-99 tile editor\nPhase 7: tile editor complete",
         )
 
     def _on_close(self, _event=None):

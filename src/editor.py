@@ -4,6 +4,7 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox
 
+import shortcuts
 from metatile_editor import MetatileEditorWindow
 from project import Project
 from project_io import load_project, save_project
@@ -25,6 +26,7 @@ class TileEditorApp:
         self.open_or_focus_tileset()
         self.open_or_focus_metatile()
         self.open_or_focus_supertile()
+        shortcuts.bind_app_shortcuts(self.root, self)
 
     def _window_alive(self, editor):
         if editor is None:
@@ -77,6 +79,7 @@ class TileEditorApp:
             self.root.quit()
 
     def exit_all(self):
+        shortcuts.unbind_app_shortcuts(self.root)
         for editor in list(self._editors):
             editor.shutdown()
             try:
@@ -144,6 +147,32 @@ class TileEditorApp:
             return
         self.project_path = path
         self._update_titles()
+
+    def _focused_editor(self):
+        try:
+            focus = self.root.focus_get()
+        except tk.TclError:
+            focus = None
+        if focus is None:
+            return None
+        try:
+            top = focus.winfo_toplevel()
+        except tk.TclError:
+            return None
+        for editor in self._editors:
+            if editor.root == top:
+                return editor
+        return None
+
+    def preview_assembly_shortcut(self):
+        editor = self._focused_editor()
+        if editor is not None:
+            editor._preview_assembly()
+
+    def preview_binary_shortcut(self):
+        editor = self._focused_editor()
+        if editor is not None:
+            editor._preview_binary()
 
     def _update_titles(self):
         suffix = ""

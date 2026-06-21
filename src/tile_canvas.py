@@ -10,6 +10,7 @@ from tile_model import TILE_SIZE
 TILE_PIXEL_SCALE_DEFAULT = 32
 TILE_PIXEL_SCALE_MIN = 24
 TILE_PIXEL_SCALE_MAX = 48
+ZOOM_STEP = 4
 SWATCH_MIN_SIZE = 20
 SWATCH_GAP = 4
 SWATCH_SIDE_PADDING = 8
@@ -22,6 +23,20 @@ def canvas_pixel_size(scale):
 
 def clamp_scale(scale):
     return max(TILE_PIXEL_SCALE_MIN, min(TILE_PIXEL_SCALE_MAX, scale))
+
+
+def zoom_in(scale):
+    """Return the next larger draw scale, or unchanged if already at max."""
+    if scale >= TILE_PIXEL_SCALE_MAX:
+        return scale
+    return clamp_scale(scale + ZOOM_STEP)
+
+
+def zoom_out(scale):
+    """Return the next smaller draw scale, or unchanged if already at min."""
+    if scale <= TILE_PIXEL_SCALE_MIN:
+        return scale
+    return clamp_scale(scale - ZOOM_STEP)
 
 
 def pixel_at(x, y, scale):

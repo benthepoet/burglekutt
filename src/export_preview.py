@@ -94,6 +94,9 @@ class ExportPreviewWindow:
 
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self.close)
+        self.root.bind("<Escape>", self.close)
+        self.root.bind("<Control-s>", self._save_shortcut)
+        self.root.bind("<Control-S>", self._save_shortcut)
         self.root.grab_set()
         self.root.focus_force()
 
@@ -169,6 +172,10 @@ class ExportPreviewWindow:
         self._parent.clipboard_clear()
         self._parent.clipboard_append(self._assembly_text)
         self._parent.update_idletasks()
+
+    def _save_shortcut(self, _event=None):
+        self._save()
+        return "break"
 
     def _save(self):
         if self._mode == MODE_ASSEMBLY:

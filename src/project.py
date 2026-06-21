@@ -4,6 +4,7 @@ from tile_model import (
     METATILE_COUNT,
     SUPERTILE_COUNT,
     TILE_COUNT,
+    TILE_SIZE,
     copy_metatile,
     copy_tile,
     default_colors,
@@ -253,16 +254,67 @@ class Project:
         """Emit TILE_CHANGED for the active tile without mutating data."""
         self.notify(ChangeEvent(ChangeEvent.TILE_CHANGED, self.active_tile_index))
 
+    def _validate_color_index(self, value, name):
+        if not isinstance(value, int) or not 0 <= value <= 15:
+            raise ValueError("{} color out of range".format(name))
+
+    def _validate_row_index(self, row):
+        if not isinstance(row, int) or not 0 <= row < TILE_SIZE:
+            raise ValueError("row index out of range")
+
     def set_row_color(self, row, fg=None, bg=None):
+        self._validate_row_index(row)
         tile = self.get_active_tile()
         colors = tile["colors"][row]
         changed = False
-        if fg is not None and colors["fg"] != fg:
-            colors["fg"] = fg
-            changed = True
-        if bg is not None and colors["bg"] != bg:
-            colors["bg"] = bg
-            changed = True
+        if fg is not None:
+            self._validate_color_index(fg, "foreground")
+            if colors["fg"] != fg:
+                colors["fg"] = fg
+                changed = True
+        if bg is not None:
+            self._validate_color_index(bg, "background")
+            if colors["bg"] != bg:
+                colors["bg"] = bg
+                changed = True
+        if changed:
+            self.notify(ChangeEvent(ChangeEvent.TILE_CHANGED, self.active_tile_index))
+        return changed
+
+    def set_all_row_colors(self, fg, bg):
+        """Set foreground and background on all scanlines of the active tile."""
+        self._validate_color_index(fg, "foreground")
+        self._validate_color_index(bg, "background")
+        tile = self.get_active_tile()
+        changed = False
+        for row in range(TILE_SIZE):
+            colors = tile["colors"][row]
+            if colors["fg"] != fg or colors["bg"] != bg:
+                colors["fg"] = fg
+                colors["bg"] = bg
+                changed = True
+        if changed:
+            self.notify(ChangeEvent(ChangeEvent.TILE_CHANGED, self.active_tile_index))
+        return changed
+
+    def copy_row_colors(self, source_row, dest_rows):
+        """Copy fg/bg from source_row to each valid destination row."""
+        self._validate_row_index(source_row)
+        tile = self.get_active_tile()
+        source = tile["colors"][source_row]
+        fg = source["fg"]
+        bg = source["bg"]
+        changed = False
+        for dest in dest_rows:
+            if not isinstance(dest, int) or not 0 <= dest < TILE_SIZE:
+                continue
+            if dest == source_row:
+                continue
+            colors = tile["colors"][dest]
+            if colors["fg"] != fg or colors["bg"] != bg:
+                colors["fg"] = fg
+                colors["bg"] = bg
+                changed = True
         if changed:
             self.notify(ChangeEvent(ChangeEvent.TILE_CHANGED, self.active_tile_index))
         return changed

@@ -5,9 +5,21 @@ from tkinter import messagebox, simpledialog, ttk
 
 import theme
 from export_preview import MODE_ASSEMBLY, MODE_BINARY, SCOPE_TILESET, show_export_preview
+from line_color_dialogs import (
+    CopyRowColorsDialog,
+    FillAllRowsDialog,
+    default_fill_colors,
+)
 from palette import TI_COLORS, PalettePopup
 from project import ChangeEvent
-from tile_canvas import TILE_PIXEL_SCALE_MIN, TileCanvas
+import shortcuts
+from tile_canvas import (
+    TILE_PIXEL_SCALE_DEFAULT,
+    TILE_PIXEL_SCALE_MIN,
+    TileCanvas,
+    zoom_in,
+    zoom_out,
+)
 from tile_model import copy_tile
 from tile_picker import TilePickerWindow
 from undo_stack import UndoStack
@@ -25,6 +37,7 @@ class TilesetEditorWindow:
         self._tile_picker = None
         self._assign_picker = None
         self._export_preview = None
+        self._line_color_dialog = None
         self._stroke_dirty = False
         self._skip_tile_refresh = False
 
@@ -60,44 +73,128 @@ class TilesetEditorWindow:
 
         file_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="File", menu=file_menu)
-        file_menu.add_command(label="New", command=self._new_project)
-        file_menu.add_command(label="Load Project", command=self._load_project)
-        file_menu.add_command(label="Save Project", command=self._save_project)
+        file_menu.add_command(
+            label="New",
+            accelerator="Ctrl+N",
+            command=self._new_project,
+        )
+        file_menu.add_command(
+            label="Load Project",
+            accelerator="Ctrl+O",
+            command=self._load_project,
+        )
+        file_menu.add_command(
+            label="Save Project",
+            accelerator="Ctrl+S",
+            command=self._save_project,
+        )
         file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self._exit_app)
+        file_menu.add_command(
+            label="Exit",
+            accelerator="Ctrl+Q",
+            command=self._exit_app,
+        )
 
         self._edit_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Edit", menu=self._edit_menu)
-        self._edit_menu.add_command(label="Undo", accelerator="Ctrl+Z", command=self._undo)
-        self._edit_menu.add_command(label="Redo", accelerator="Ctrl+Y", command=self._redo)
+        self._edit_menu.add_command(
+            label="Undo",
+            accelerator="Ctrl+Z",
+            command=self._undo,
+        )
+        self._edit_menu.add_command(
+            label="Redo",
+            accelerator="Ctrl+Y",
+            command=self._redo,
+        )
         self._edit_menu.add_separator()
-        self._edit_menu.add_command(label="Clear Tile", command=self._clear_tile)
-        self._edit_menu.add_command(label="Duplicate to…", command=self._duplicate_tile)
+        self._edit_menu.add_command(
+            label="Clear Tile",
+            accelerator="Ctrl+Backspace",
+            command=self._clear_tile,
+        )
+        self._edit_menu.add_command(
+            label="Duplicate to…",
+            accelerator="Ctrl+D",
+            command=self._duplicate_tile,
+        )
+
+        colors_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Colors", menu=colors_menu)
+        colors_menu.add_command(
+            label="Fill All Rows…",
+            accelerator="Ctrl+Shift+F",
+            command=self._fill_all_rows,
+        )
+        colors_menu.add_command(
+            label="Copy Row Colors…",
+            accelerator="Ctrl+Shift+R",
+            command=self._copy_row_colors,
+        )
 
         tiles_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Tiles", menu=tiles_menu)
-        tiles_menu.add_command(label="Select Tile…", command=self._open_tile_picker)
+        tiles_menu.add_command(
+            label="Select Tile…",
+            accelerator="Ctrl+T",
+            command=self._open_tile_picker,
+        )
+
+        view_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="View", menu=view_menu)
+        view_menu.add_command(
+            label="Zoom In",
+            accelerator="+",
+            command=self._zoom_in,
+        )
+        view_menu.add_command(
+            label="Zoom Out",
+            accelerator="-",
+            command=self._zoom_out,
+        )
+        view_menu.add_command(
+            label="Reset Zoom",
+            command=self._zoom_reset,
+        )
 
         export_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Export", menu=export_menu)
         export_menu.add_command(
             label="Save Assembly…",
+            accelerator="Ctrl+Shift+A",
             command=self._preview_assembly,
         )
         export_menu.add_command(
             label="Save Binary…",
+            accelerator="Ctrl+Shift+B",
             command=self._preview_binary,
         )
 
         window_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Window", menu=window_menu)
-        window_menu.add_command(label="Tileset", command=self.focus)
+        window_menu.add_command(
+            label="Tileset",
+            accelerator="Ctrl+1",
+            command=self.focus,
+        )
         window_menu.add_command(label="Tile Picker", command=self._open_tile_picker)
-        window_menu.add_command(label="Metatile", command=self._focus_metatile)
-        window_menu.add_command(label="Supertile", command=self._focus_supertile)
+        window_menu.add_command(
+            label="Metatile",
+            accelerator="Ctrl+2",
+            command=self._focus_metatile,
+        )
+        window_menu.add_command(
+            label="Supertile",
+            accelerator="Ctrl+3",
+            command=self._focus_supertile,
+        )
 
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
+        help_menu.add_command(
+            label="Keyboard Shortcuts…",
+            command=self._show_shortcuts,
+        )
         help_menu.add_command(label="About", command=self._show_about)
 
     def _build_layout(self):
@@ -119,6 +216,12 @@ class TilesetEditorWindow:
         self.tile_canvas.on_swatch_select(self._on_swatch_select)
         self.tile_canvas.on_pixel_change(self._on_pixel_change)
         self.tile_canvas.on_stroke_end(self._on_stroke_end)
+        self.tile_canvas.canvas.configure(takefocus=True)
+        shortcuts.bind_canvas_zoom(
+            self.tile_canvas.canvas,
+            self._zoom_in,
+            self._zoom_out,
+        )
 
         sidebar = ttk.Labelframe(
             content,
@@ -174,9 +277,22 @@ class TilesetEditorWindow:
         self._status_label.pack(fill=tk.X)
 
     def _bind_shortcuts(self):
-        self.root.bind_all("<Control-z>", self._undo)
-        self.root.bind_all("<Control-y>", self._redo)
-        self.root.bind_all("<Control-Z>", self._redo)
+        shortcuts.bind_common(self.root, self.coordinator)
+        shortcuts.bind_tileset(self.root, self)
+
+    def _zoom_in(self, event=None):
+        scale = zoom_in(self.tile_canvas.scale)
+        if scale != self.tile_canvas.scale:
+            self.tile_canvas.set_scale(scale)
+
+    def _zoom_out(self, event=None):
+        scale = zoom_out(self.tile_canvas.scale)
+        if scale != self.tile_canvas.scale:
+            self.tile_canvas.set_scale(scale)
+
+    def _zoom_reset(self, event=None):
+        if self.tile_canvas.scale != TILE_PIXEL_SCALE_DEFAULT:
+            self.tile_canvas.set_scale(TILE_PIXEL_SCALE_DEFAULT)
 
     def _push_undo_snapshot(self):
         self.undo_stack.push(copy_tile(self.project.get_active_tile()))
@@ -341,6 +457,50 @@ class TilesetEditorWindow:
             self._export_preview.close()
             self._export_preview = None
 
+    def _close_line_color_dialog(self):
+        if self._line_color_dialog is not None:
+            self._line_color_dialog.close()
+            self._line_color_dialog = None
+
+    def _fill_all_rows(self, event=None):
+        self._close_line_color_dialog()
+        tile = self.project.get_active_tile()
+        initial_fg, initial_bg = default_fill_colors(tile, self._color_target_row)
+
+        def on_apply(fg, bg):
+            self._push_undo_snapshot()
+            self.project.set_all_row_colors(fg, bg)
+            self._update_edit_menu_state()
+
+        self._line_color_dialog = FillAllRowsDialog(
+            self.root,
+            initial_fg,
+            initial_bg,
+            on_apply,
+            self._window_bg,
+        )
+
+    def _copy_row_colors(self, event=None):
+        self._close_line_color_dialog()
+        default_source = (
+            self._color_target_row
+            if self._color_target_row is not None
+            else 0
+        )
+
+        def on_apply(source_row, dest_rows):
+            self._push_undo_snapshot()
+            self.project.copy_row_colors(source_row, dest_rows)
+            self._update_edit_menu_state()
+
+        self._line_color_dialog = CopyRowColorsDialog(
+            self.root,
+            self.project.get_active_tile(),
+            default_source,
+            on_apply,
+            self._window_bg,
+        )
+
     def _preview_assembly(self, event=None):
         self._close_export_preview()
         self._export_preview = show_export_preview(
@@ -390,6 +550,7 @@ class TilesetEditorWindow:
 
     def shutdown(self):
         self._close_export_preview()
+        self._close_line_color_dialog()
         self._close_palette_popup()
         if self._tile_picker is not None:
             self._tile_picker.close()
@@ -433,10 +594,19 @@ class TilesetEditorWindow:
         if self.coordinator is not None:
             self.coordinator.save_project_dialog()
 
+    def _show_shortcuts(self, event=None):
+        text = "\n".join(
+            [
+                shortcuts.COMMON_HELP.strip(),
+                shortcuts.TILESET_HELP.strip(),
+            ]
+        )
+        shortcuts.show_shortcuts_help(self.root, text)
+
     def _show_about(self, event=None):
         messagebox.showinfo(
             "About burglekutt",
-            "burglekutt — TI-99 tile editor\nPhase 6: project I/O and export",
+            "burglekutt — TI-99 tile editor\nPhase 7: tile editor complete",
         )
 
     def _on_close(self, event=None):
