@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 
 import theme
-from composite import resolve_metatile_pixels, resolve_tile_pixels, tile_is_empty
+from composite import resolve_metatile_pixels, resolve_tile_pixels
 from project import ChangeEvent
 from tile_model import (
     METATILE_FLAG_DOOR,
@@ -15,7 +15,7 @@ from tile_model import (
     flags_has,
     flags_summary,
 )
-from tile_picker import PICKER_CELL_PLACEHOLDER, PICKER_TILE_SCALE_DEFAULT, TilePickerWindow
+from tile_picker import PICKER_TILE_SCALE_DEFAULT, TilePickerWindow
 
 METATILE_PIXEL_SCALE_DEFAULT = 8
 METATILE_SIZE = 16
@@ -325,18 +325,6 @@ class MetatileEditorWindow:
     def _draw_tile_thumbnail(self, canvas, tile):
         canvas.delete("all")
         size = CELL_THUMB_SIZE
-        if tile_is_empty(tile):
-            canvas.create_rectangle(0, 0, size, size, fill=theme.CANVAS_BG, outline="")
-            inset = max(1, CELL_THUMB_SCALE)
-            canvas.create_rectangle(
-                inset,
-                inset,
-                size - inset,
-                size - inset,
-                fill=PICKER_CELL_PLACEHOLDER,
-                outline="",
-            )
-            return
         pixels = resolve_tile_pixels(tile)
         for row in range(8):
             for col in range(8):

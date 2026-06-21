@@ -2,7 +2,7 @@
 
 import tkinter as tk
 
-from composite import resolve_tile_pixels, tile_is_empty
+from composite import resolve_tile_pixels
 from project import ChangeEvent
 import theme
 
@@ -11,9 +11,6 @@ PICKER_TILE_SCALE_MIN = 2
 PICKER_CELL_GAP = 2
 PICKER_COLUMNS = 16
 PICKER_ROWS = 16
-PICKER_CELL_PLACEHOLDER = "#BBBBBB"
-
-
 def clamp_picker_scale(scale):
     return max(PICKER_TILE_SCALE_MIN, scale)
 
@@ -117,35 +114,22 @@ class TilePickerWindow:
             y1 = y0 + cell
 
             tile = self.project.get_tile(index)
-            if tile_is_empty(tile):
-                fill = theme.CANVAS_BG
-                self.canvas.create_rectangle(x0, y0, x1, y1, fill=fill, outline="")
-                inset = max(1, self.scale)
-                self.canvas.create_rectangle(
-                    x0 + inset,
-                    y0 + inset,
-                    x1 - inset,
-                    y1 - inset,
-                    fill=PICKER_CELL_PLACEHOLDER,
-                    outline="",
-                )
-            else:
-                pixels = resolve_tile_pixels(tile)
-                pixel_scale = self.scale
-                for prow in range(8):
-                    for pcol in range(8):
-                        px0 = x0 + pcol * pixel_scale
-                        py0 = y0 + prow * pixel_scale
-                        px1 = px0 + pixel_scale
-                        py1 = py0 + pixel_scale
-                        self.canvas.create_rectangle(
-                            px0,
-                            py0,
-                            px1,
-                            py1,
-                            fill=pixels[prow][pcol],
-                            outline="",
-                        )
+            pixels = resolve_tile_pixels(tile)
+            pixel_scale = self.scale
+            for prow in range(8):
+                for pcol in range(8):
+                    px0 = x0 + pcol * pixel_scale
+                    py0 = y0 + prow * pixel_scale
+                    px1 = px0 + pixel_scale
+                    py1 = py0 + pixel_scale
+                    self.canvas.create_rectangle(
+                        px0,
+                        py0,
+                        px1,
+                        py1,
+                        fill=pixels[prow][pcol],
+                        outline="",
+                    )
 
             if index == self.project.active_tile_index and self.mode == "edit":
                 self.canvas.create_rectangle(
