@@ -37,6 +37,7 @@ class SupertileEditorWindow:
         self.root.minsize(820, 480)
 
         self._window_bg = theme.SUPERTILE_WINDOW_BG
+        self._styles = theme.window_styles(self._window_bg)
         theme.apply_window_theme(self.root, self._window_bg)
 
         self._main_frame = tk.Frame(self.root, bg=self._window_bg)
@@ -82,13 +83,22 @@ class SupertileEditorWindow:
         theme.register_frame(content, self.root, self._window_bg)
         content.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
-        left = ttk.Labelframe(content, text="Supertiles", padding=8)
+        left = ttk.Labelframe(
+            content,
+            text="Supertiles",
+            padding=8,
+            style=self._styles.labelframe,
+        )
         left.pack(side=tk.LEFT, fill=tk.Y)
 
-        list_frame = ttk.Frame(left)
+        list_frame = ttk.Frame(left, style=self._styles.frame)
         list_frame.pack(fill=tk.BOTH, expand=True)
 
-        list_scroll = ttk.Scrollbar(list_frame, orient=tk.VERTICAL)
+        list_scroll = ttk.Scrollbar(
+            list_frame,
+            orient=tk.VERTICAL,
+            style=self._styles.scrollbar,
+        )
         list_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
         self._supertile_list = tk.Listbox(
@@ -101,17 +111,26 @@ class SupertileEditorWindow:
         list_scroll.config(command=self._supertile_list.yview)
         self._supertile_list.bind("<<ListboxSelect>>", self._on_list_select)
 
-        buttons = ttk.Frame(left)
+        buttons = ttk.Frame(left, style=self._styles.frame)
         buttons.pack(fill=tk.X, pady=(8, 0))
-        ttk.Button(buttons, text="Add", command=self._add_supertile).pack(
-            side=tk.LEFT, padx=(0, 4)
-        )
-        ttk.Button(buttons, text="Remove", command=self._remove_supertile).pack(
-            side=tk.LEFT, padx=(0, 4)
-        )
-        ttk.Button(buttons, text="Rename…", command=self._rename_supertile).pack(
-            side=tk.LEFT
-        )
+        ttk.Button(
+            buttons,
+            text="Add",
+            command=self._add_supertile,
+            style=self._styles.button,
+        ).pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Button(
+            buttons,
+            text="Remove",
+            command=self._remove_supertile,
+            style=self._styles.button,
+        ).pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Button(
+            buttons,
+            text="Rename…",
+            command=self._rename_supertile,
+            style=self._styles.button,
+        ).pack(side=tk.LEFT)
 
         center = tk.Frame(content, bg=self._window_bg)
         theme.register_frame(center, self.root, self._window_bg)
@@ -129,7 +148,12 @@ class SupertileEditorWindow:
         )
         self._composite_canvas.pack()
 
-        right = ttk.Labelframe(content, text="Cells", padding=8)
+        right = ttk.Labelframe(
+            content,
+            text="Cells",
+            padding=8,
+            style=self._styles.labelframe,
+        )
         right.pack(side=tk.LEFT, fill=tk.Y)
 
         self._cell_grid = tk.Frame(right, bg=self._window_bg)
@@ -168,7 +192,11 @@ class SupertileEditorWindow:
         theme.register_frame(status_frame, self.root, self._window_bg)
         status_frame.pack(fill=tk.X, side=tk.BOTTOM, padx=8, pady=(0, 6))
 
-        self._status_label = ttk.Label(status_frame, anchor=tk.W)
+        self._status_label = ttk.Label(
+            status_frame,
+            anchor=tk.W,
+            style=self._styles.label,
+        )
         self._status_label.pack(fill=tk.X)
 
     def shutdown(self):

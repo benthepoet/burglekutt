@@ -37,6 +37,7 @@ class MetatileEditorWindow:
         self.root.minsize(720, 420)
 
         self._window_bg = theme.METATILE_WINDOW_BG
+        self._styles = theme.window_styles(self._window_bg)
         theme.apply_window_theme(self.root, self._window_bg)
 
         self._main_frame = tk.Frame(self.root, bg=self._window_bg)
@@ -82,13 +83,22 @@ class MetatileEditorWindow:
         theme.register_frame(content, self.root, self._window_bg)
         content.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
-        left = ttk.Labelframe(content, text="Metatiles", padding=8)
+        left = ttk.Labelframe(
+            content,
+            text="Metatiles",
+            padding=8,
+            style=self._styles.labelframe,
+        )
         left.pack(side=tk.LEFT, fill=tk.Y)
 
-        list_frame = ttk.Frame(left)
+        list_frame = ttk.Frame(left, style=self._styles.frame)
         list_frame.pack(fill=tk.BOTH, expand=True)
 
-        list_scroll = ttk.Scrollbar(list_frame, orient=tk.VERTICAL)
+        list_scroll = ttk.Scrollbar(
+            list_frame,
+            orient=tk.VERTICAL,
+            style=self._styles.scrollbar,
+        )
         list_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
         self._metatile_list = tk.Listbox(
@@ -101,17 +111,33 @@ class MetatileEditorWindow:
         list_scroll.config(command=self._metatile_list.yview)
         self._metatile_list.bind("<<ListboxSelect>>", self._on_list_select)
 
-        buttons = ttk.Frame(left)
+        buttons = ttk.Frame(left, style=self._styles.frame)
         buttons.pack(fill=tk.X, pady=(8, 0))
-        ttk.Button(buttons, text="Add", command=self._add_metatile).pack(
-            side=tk.LEFT, padx=(0, 4)
-        )
-        ttk.Button(buttons, text="Remove", command=self._remove_metatile).pack(
-            side=tk.LEFT, padx=(0, 4)
-        )
-        ttk.Button(buttons, text="Rename…", command=self._rename_metatile).pack(side=tk.LEFT)
+        ttk.Button(
+            buttons,
+            text="Add",
+            command=self._add_metatile,
+            style=self._styles.button,
+        ).pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Button(
+            buttons,
+            text="Remove",
+            command=self._remove_metatile,
+            style=self._styles.button,
+        ).pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Button(
+            buttons,
+            text="Rename…",
+            command=self._rename_metatile,
+            style=self._styles.button,
+        ).pack(side=tk.LEFT)
 
-        flags_frame = ttk.Labelframe(left, text="Flags", padding=8)
+        flags_frame = ttk.Labelframe(
+            left,
+            text="Flags",
+            padding=8,
+            style=self._styles.labelframe,
+        )
         flags_frame.pack(fill=tk.X, pady=(8, 0))
         flag_defs = (
             (METATILE_FLAG_SOLID, "Solid"),
@@ -128,6 +154,7 @@ class MetatileEditorWindow:
                 text=label,
                 variable=var,
                 command=lambda m=mask: self._on_flag_toggle(m),
+                style=self._styles.checkbutton,
             ).pack(anchor=tk.W)
 
         center = tk.Frame(content, bg=self._window_bg)
@@ -144,7 +171,12 @@ class MetatileEditorWindow:
         )
         self._composite_canvas.pack()
 
-        right = ttk.Labelframe(content, text="Cells", padding=8)
+        right = ttk.Labelframe(
+            content,
+            text="Cells",
+            padding=8,
+            style=self._styles.labelframe,
+        )
         right.pack(side=tk.LEFT, fill=tk.Y)
 
         self._cell_grid = tk.Frame(right, bg=self._window_bg)
@@ -178,7 +210,11 @@ class MetatileEditorWindow:
         theme.register_frame(status_frame, self.root, self._window_bg)
         status_frame.pack(fill=tk.X, side=tk.BOTTOM, padx=8, pady=(0, 6))
 
-        self._status_label = ttk.Label(status_frame, anchor=tk.W)
+        self._status_label = ttk.Label(
+            status_frame,
+            anchor=tk.W,
+            style=self._styles.label,
+        )
         self._status_label.pack(fill=tk.X)
 
     def shutdown(self):

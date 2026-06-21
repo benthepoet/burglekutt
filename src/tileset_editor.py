@@ -31,6 +31,7 @@ class TilesetEditorWindow:
         self.root.minsize(min_canvas + 200, min_canvas + 120)
 
         self._window_bg = theme.TILESET_WINDOW_BG
+        self._styles = theme.window_styles(self._window_bg)
         theme.apply_window_theme(self.root, self._window_bg)
 
         self._main_frame = tk.Frame(self.root, bg=self._window_bg)
@@ -106,33 +107,57 @@ class TilesetEditorWindow:
         self.tile_canvas.on_pixel_change(self._on_pixel_change)
         self.tile_canvas.on_stroke_end(self._on_stroke_end)
 
-        sidebar = ttk.Labelframe(content, text="Tile", padding=8)
+        sidebar = ttk.Labelframe(
+            content,
+            text="Tile",
+            padding=8,
+            style=self._styles.labelframe,
+        )
         sidebar.pack(side=tk.LEFT, fill=tk.Y, padx=(8, 0))
 
-        self._tile_index_label = ttk.Label(sidebar, text="Index: 0")
+        self._tile_index_label = ttk.Label(
+            sidebar,
+            text="Index: 0",
+            style=self._styles.label,
+        )
         self._tile_index_label.pack(anchor=tk.W, pady=(0, 4))
 
-        self._tile_name_label = ttk.Label(sidebar, text="Name: TIL00")
+        self._tile_name_label = ttk.Label(
+            sidebar,
+            text="Name: TIL00",
+            style=self._styles.label,
+        )
         self._tile_name_label.pack(anchor=tk.W, pady=(0, 8))
 
-        ttk.Button(sidebar, text="Select Tile…", command=self._open_tile_picker).pack(
-            fill=tk.X,
-            pady=(0, 4),
-        )
-        ttk.Button(sidebar, text="Rename…", command=self._rename_tile).pack(
-            fill=tk.X,
-            pady=(0, 4),
-        )
-        ttk.Button(sidebar, text="Duplicate to…", command=self._duplicate_tile).pack(
-            fill=tk.X,
-        )
+        ttk.Button(
+            sidebar,
+            text="Select Tile…",
+            command=self._open_tile_picker,
+            style=self._styles.button,
+        ).pack(fill=tk.X, pady=(0, 4))
+        ttk.Button(
+            sidebar,
+            text="Rename…",
+            command=self._rename_tile,
+            style=self._styles.button,
+        ).pack(fill=tk.X, pady=(0, 4))
+        ttk.Button(
+            sidebar,
+            text="Duplicate to…",
+            command=self._duplicate_tile,
+            style=self._styles.button,
+        ).pack(fill=tk.X)
 
     def _build_status_bar(self):
         status_frame = tk.Frame(self._main_frame, bg=self._window_bg)
         theme.register_frame(status_frame, self.root, self._window_bg)
         status_frame.pack(fill=tk.X, side=tk.BOTTOM, padx=8, pady=(0, 6))
 
-        self._status_label = ttk.Label(status_frame, anchor=tk.W)
+        self._status_label = ttk.Label(
+            status_frame,
+            anchor=tk.W,
+            style=self._styles.label,
+        )
         self._status_label.pack(fill=tk.X)
 
     def _bind_shortcuts(self):
