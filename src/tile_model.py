@@ -1,5 +1,7 @@
 """Tile data structures and defaults."""
 
+import copy
+
 TILE_SIZE = 8
 DEFAULT_FG = 15
 DEFAULT_BG = 1
@@ -23,3 +25,8 @@ def empty_tile(name=DEFAULT_TILE_NAME):
         "pattern": empty_pattern(),
         "colors": default_colors(),
     }
+
+
+def copy_tile(tile):
+    """Return a deep copy of a tile dict."""
+    return copy.deepcopy(tile)

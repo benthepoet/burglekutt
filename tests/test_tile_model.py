@@ -4,7 +4,14 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from tile_model import DEFAULT_TILE_NAME, TILE_SIZE, empty_tile, empty_pattern, default_colors
+from tile_model import (
+    DEFAULT_TILE_NAME,
+    TILE_SIZE,
+    copy_tile,
+    default_colors,
+    empty_pattern,
+    empty_tile,
+)
 
 
 class TestTileModel(unittest.TestCase):
@@ -26,6 +33,14 @@ class TestTileModel(unittest.TestCase):
         self.assertEqual(tile["name"], DEFAULT_TILE_NAME)
         self.assertEqual(len(tile["pattern"]), TILE_SIZE)
         self.assertEqual(len(tile["colors"]), TILE_SIZE)
+
+    def test_copy_tile_is_independent(self):
+        tile = empty_tile()
+        copied = copy_tile(tile)
+        copied["pattern"][0][0] = 1
+        copied["colors"][0]["fg"] = 3
+        self.assertEqual(tile["pattern"][0][0], 0)
+        self.assertEqual(tile["colors"][0]["fg"], 15)
 
 
 if __name__ == "__main__":
