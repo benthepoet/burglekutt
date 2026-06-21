@@ -1,10 +1,8 @@
-"""TMS9918 palette constants, color resolution, and palette sidebar widget."""
+"""TMS9918 palette constants, color resolution, and palette popup widget."""
 
 import tkinter as tk
-from tkinter import ttk
 
 import theme
-from tile_model import TILE_SIZE
 
 TI_COLORS = [
     "Transparent",
@@ -75,30 +73,25 @@ def _draw_checkerboard(canvas, size):
     canvas.create_rectangle(0, half, half, size, fill=dark, outline="")
 
 
-class PalettePanel(ttk.Frame):
-    """Clickable TMS9918 color grid for assigning row fg/bg colors."""
+class PalettePanel(tk.Frame):
+    """Clickable TMS9918 color grid."""
 
-    def __init__(self, parent, window_bg=None):
-        super().__init__(parent)
+    def __init__(self, parent, window_bg=None, *, require_target=True):
+        bg = window_bg or parent.cget("bg")
+        super().__init__(parent, bg=bg)
         self._window_bg = window_bg
+        self._require_target = require_target
         self._target_row = None
         self._target_channel = None
         self._color_callbacks = []
 
-        self._target_label = ttk.Label(self, text="Select a row fg/bg swatch")
-        self._target_label.pack(anchor=tk.W, pady=(0, 6))
-
-        grid = tk.Frame(self, bg=window_bg or parent.cget("bg"))
-        if window_bg:
-            theme.register_frame(grid)
+        grid = tk.Frame(self, bg=bg)
         grid.pack()
 
         for index in range(16):
             row = index // PALETTE_COLUMNS
             col = index % PALETTE_COLUMNS
-            cell = tk.Frame(grid, bg=window_bg or parent.cget("bg"))
-            if window_bg:
-                theme.register_frame(cell)
+            cell = tk.Frame(grid, bg=bg)
             cell.grid(row=row, column=col, padx=2, pady=2)
 
             swatch = tk.Canvas(
@@ -122,23 +115,25 @@ class PalettePanel(ttk.Frame):
                     outline="",
                 )
             swatch.bind(
-                "<Button-1>",
+                "<ButtonRelease-1>",
                 lambda _event, color_index=index: self._on_swatch_click(color_index),
             )
 
-            ttk.Label(cell, text=str(index), anchor=tk.CENTER).pack()
+            tk.Label(
+                cell,
+                text=str(index),
+                bg=bg,
+                fg=theme.TEXT_FG,
+                anchor=tk.CENTER,
+            ).pack()
 
     def set_target(self, row, channel):
-        """Highlight the active row/channel target for palette assignment."""
         self._target_row = row
         self._target_channel = channel
-        channel_label = "foreground" if channel == "fg" else "background"
-        self._target_label.config(text=f"Row {row} {channel_label}")
 
     def clear_target(self):
         self._target_row = None
         self._target_channel = None
-        self._target_label.config(text="Select a row fg/bg swatch")
 
     def has_target(self):
         return self._target_row is not None and self._target_channel is not None
@@ -150,7 +145,91 @@ class PalettePanel(ttk.Frame):
         self._color_callbacks.append(callback)
 
     def _on_swatch_click(self, color_index):
-        if not self.has_target():
+        if self._require_target and not self.has_target():
             return
         for callback in self._color_callbacks:
             callback(color_index)
+
+
+class PalettePopup:
+    """Transient palette window opened from a row fg/bg swatch click."""
+
+    def __init__(self, parent, row, channel, on_color_pick, on_close=None, x_root=None, y_root=None):
+        self._parent = parent
+        self._on_color_pick = on_color_pick
+        self._on_close = on_close
+        self._closed = False
+        self._window = tk.Toplevel(parent)
+        channel_label = "foreground" if channel == "fg" else "background"
+        self._window.title(f"Row {row} {channel_label}")
+
+        picker_bg = theme.TILE_PICKER_BG
+        self._window.configure(bg=picker_bg)
+        self._window.transient(parent)
+
+        shell = tk.Frame(self._window, bg=picker_bg, padx=8, pady=8)
+        shell.pack()
+
+        tk.Label(
+            shell,
+            text=f"Row {row} — {channel_label}",
+            bg=picker_bg,
+            fg=theme.PANEL_TITLE_FG,
+            font=theme.PANEL_TITLE_FONT,
+        ).pack(anchor=tk.W, pady=(0, 8))
+
+        self._panel = PalettePanel(shell, window_bg=picker_bg, require_target=False)
+        self._panel.pack()
+        self._panel.set_target(row, channel)
+        self._panel.on_color_pick(self._handle_pick)
+
+        self._window.protocol("WM_DELETE_WINDOW", self.close)
+        self._window.bind("<Escape>", lambda _event: self.close())
+
+        self._window.update_idletasks()
+        self._place_window(x_root, y_root)
+
+    def _place_window(self, x_root, y_root):
+        width = self._window.winfo_width()
+        height = self._window.winfo_height()
+        if x_root is not None and y_root is not None:
+            x = x_root + 12
+            y = y_root - height // 2
+        else:
+            parent_x = self._parent.winfo_rootx()
+            parent_y = self._parent.winfo_rooty()
+            parent_w = self._parent.winfo_width()
+            parent_h = self._parent.winfo_height()
+            x = parent_x + (parent_w - width) // 2
+            y = parent_y + (parent_h - height) // 2
+        self._window.geometry(f"+{x}+{y}")
+        self._window.grab_set()
+        self._window.focus_force()
+
+    def _handle_pick(self, color_index):
+        if self._closed:
+            return
+        self._window.after_idle(lambda: self._apply_pick(color_index))
+
+    def _apply_pick(self, color_index):
+        if self._closed:
+            return
+        self._on_color_pick(color_index)
+        self.close()
+
+    def close(self):
+        if self._closed:
+            return
+        self._closed = True
+        window = self._window
+        self._window = None
+        try:
+            window.grab_release()
+        except tk.TclError:
+            pass
+        try:
+            window.destroy()
+        except tk.TclError:
+            pass
+        if self._on_close:
+            self._on_close()

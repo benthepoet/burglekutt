@@ -3,7 +3,8 @@
 import tkinter as tk
 
 from palette import resolve_pixel_color, rgb_to_hex
-from theme import ACCENT_BORDER, CANVAS_BG, CANVAS_GRID_OUTLINE
+from theme import CANVAS_BG, CANVAS_GRID_OUTLINE
+import theme
 from tile_model import TILE_SIZE
 
 TILE_PIXEL_SCALE_DEFAULT = 32
@@ -60,13 +61,16 @@ class TileCanvas(tk.Frame):
         self._swatch_select_callbacks = []
         self._pixel_change_callbacks = []
         self._stroke_active = False
+        self._suppress_stroke = False
+        self._swatch_widgets = []
 
-        body = tk.Frame(self, bg=self._window_bg)
-        body.pack()
+        self._body = tk.Frame(self, bg=self._window_bg)
+        theme.register_frame(self._body)
+        self._body.pack()
 
         width, height = canvas_pixel_size(self.scale)
         self.canvas = tk.Canvas(
-            body,
+            self._body,
             width=width,
             height=height,
             bg=CANVAS_BG,
@@ -75,27 +79,72 @@ class TileCanvas(tk.Frame):
         )
         self.canvas.pack(side=tk.LEFT)
 
-        swatch_width = swatch_column_width(self.scale)
-        self._swatch_canvas = tk.Canvas(
-            body,
-            width=swatch_width,
-            height=height,
-            bg=CANVAS_BG,
-            highlightthickness=0,
-            cursor="hand2",
-        )
-        self._swatch_canvas.pack(side=tk.LEFT, padx=(4, 0))
+        self._swatch_column = tk.Frame(self._body, bg=self._window_bg)
+        theme.register_frame(self._swatch_column)
+        self._swatch_column.pack(side=tk.LEFT, padx=(4, 0))
+        self._build_swatch_column(height)
 
         self._bind_drawing_events()
-        self._bind_swatch_events()
         self.refresh()
+
+    def _build_swatch_column(self, height):
+        for child in self._swatch_column.winfo_children():
+            child.destroy()
+        self._swatch_widgets = []
+
+        scale = self.scale
+        size = swatch_size(scale)
+        swatch_width = swatch_column_width(scale)
+        self._swatch_column.configure(width=swatch_width, height=height)
+        self._swatch_column.pack_propagate(False)
+
+        for row in range(TILE_SIZE):
+            row_frame = tk.Frame(self._swatch_column, bg=self._window_bg, height=scale)
+            theme.register_frame(row_frame)
+            row_frame.pack(fill=tk.X)
+            row_frame.pack_propagate(False)
+
+            inner = tk.Frame(row_frame, bg=self._window_bg)
+            theme.register_frame(inner)
+            inner.pack(pady=max(0, (scale - size) // 2))
+
+            fg = tk.Frame(
+                inner,
+                width=size,
+                height=size,
+                cursor="hand2",
+                highlightthickness=1,
+                highlightbackground=CANVAS_GRID_OUTLINE,
+            )
+            fg.pack(side=tk.LEFT, padx=(SWATCH_SIDE_PADDING, SWATCH_GAP // 2))
+            fg.pack_propagate(False)
+            fg.bind(
+                "<Button-1>",
+                lambda event, swatch_row=row: self._on_swatch_click(swatch_row, "fg", event),
+            )
+
+            bg = tk.Frame(
+                inner,
+                width=size,
+                height=size,
+                cursor="hand2",
+                highlightthickness=1,
+                highlightbackground=CANVAS_GRID_OUTLINE,
+            )
+            bg.pack(side=tk.LEFT, padx=(SWATCH_GAP // 2, SWATCH_SIDE_PADDING))
+            bg.pack_propagate(False)
+            bg.bind(
+                "<Button-1>",
+                lambda event, swatch_row=row: self._on_swatch_click(swatch_row, "bg", event),
+            )
+
+            self._swatch_widgets.append({"fg": fg, "bg": bg})
 
     def set_scale(self, scale):
         self.scale = clamp_scale(scale)
         width, height = canvas_pixel_size(self.scale)
-        swatch_width = swatch_column_width(self.scale)
         self.canvas.configure(width=width, height=height)
-        self._swatch_canvas.configure(width=swatch_width, height=height)
+        self._build_swatch_column(height)
         self.refresh()
 
     def on_swatch_select(self, callback):
@@ -107,7 +156,11 @@ class TileCanvas(tk.Frame):
     def set_active_target(self, row, channel):
         self._active_row = row
         self._active_channel = channel
-        self._draw_swatches()
+
+    def suppress_next_stroke(self):
+        """Ignore the next pattern-canvas click (e.g. after palette popup closes)."""
+        self._suppress_stroke = True
+        self._stroke_active = False
 
     def refresh(self):
         tile = self.project.get_active_tile()
@@ -115,6 +168,7 @@ class TileCanvas(tk.Frame):
         canvas = self.canvas
         canvas.delete("all")
 
+        width, height = canvas_pixel_size(scale)
         for row in range(TILE_SIZE):
             for col in range(TILE_SIZE):
                 x0 = col * scale
@@ -126,57 +180,19 @@ class TileCanvas(tk.Frame):
 
         for i in range(TILE_SIZE + 1):
             pos = i * scale
-            canvas.create_line(0, pos, TILE_SIZE * scale, pos, fill=CANVAS_GRID_OUTLINE)
-            canvas.create_line(pos, 0, pos, TILE_SIZE * scale, fill=CANVAS_GRID_OUTLINE)
+            if i == TILE_SIZE:
+                pos = width - 1
+            canvas.create_line(0, pos, width - 1, pos, fill=CANVAS_GRID_OUTLINE)
+            canvas.create_line(pos, 0, pos, height - 1, fill=CANVAS_GRID_OUTLINE)
 
-        self._draw_swatches()
+        self._update_swatches()
 
-    def _draw_swatches(self):
+    def _update_swatches(self):
         tile = self.project.get_active_tile()
-        scale = self.scale
-        size, fg_x, bg_x = swatch_layout(scale)
-        canvas = self._swatch_canvas
-        canvas.delete("all")
-
-        for row in range(TILE_SIZE):
-            y0 = row * scale
-            y1 = y0 + scale
-            fg_y0 = y0 + (scale - size) // 2
-            fg_y1 = fg_y0 + size
-            bg_y0 = fg_y0
-            bg_y1 = fg_y1
-
+        for row, widgets in enumerate(self._swatch_widgets):
             colors = tile["colors"][row]
-            canvas.create_rectangle(
-                fg_x,
-                fg_y0,
-                fg_x + size,
-                fg_y1,
-                fill=rgb_to_hex(colors["fg"]),
-                outline=CANVAS_GRID_OUTLINE,
-                tags=("swatch", f"fg-{row}"),
-            )
-            canvas.create_rectangle(
-                bg_x,
-                bg_y0,
-                bg_x + size,
-                bg_y1,
-                fill=rgb_to_hex(colors["bg"]),
-                outline=CANVAS_GRID_OUTLINE,
-                tags=("swatch", f"bg-{row}"),
-            )
-
-            if row == self._active_row:
-                highlight_y0 = y0 + 1
-                highlight_y1 = y1 - 1
-                canvas.create_rectangle(
-                    fg_x - 1,
-                    highlight_y0,
-                    bg_x + size + 1,
-                    highlight_y1,
-                    outline=ACCENT_BORDER,
-                    width=2,
-                )
+            widgets["fg"].configure(bg=rgb_to_hex(colors["fg"]))
+            widgets["bg"].configure(bg=rgb_to_hex(colors["bg"]))
 
     def _bind_drawing_events(self):
         for sequence, bit in (
@@ -189,10 +205,10 @@ class TileCanvas(tk.Frame):
         self.canvas.bind("<ButtonRelease-1>", self._on_stroke_end)
         self.canvas.bind("<ButtonRelease-3>", self._on_stroke_end)
 
-    def _bind_swatch_events(self):
-        self._swatch_canvas.bind("<Button-1>", self._on_swatch_click)
-
     def _on_draw(self, event, bit):
+        if self._suppress_stroke:
+            self._suppress_stroke = False
+            return
         row, col = pixel_at(event.x, event.y, self.scale)
         for callback in self._pixel_change_callbacks:
             callback(row, col, bit, not self._stroke_active)
@@ -201,10 +217,7 @@ class TileCanvas(tk.Frame):
     def _on_stroke_end(self, _event=None):
         self._stroke_active = False
 
-    def _on_swatch_click(self, event):
-        size, fg_x, bg_x = swatch_layout(self.scale)
-        row = max(0, min(TILE_SIZE - 1, int(event.y // self.scale)))
-        channel = "fg" if event.x < fg_x + size + SWATCH_GAP // 2 else "bg"
+    def _on_swatch_click(self, row, channel, event):
         self.set_active_target(row, channel)
         for callback in self._swatch_select_callbacks:
-            callback(row, channel)
+            callback(row, channel, event.x_root, event.y_root)

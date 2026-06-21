@@ -4,7 +4,7 @@ import tkinter as tk
 from tkinter import messagebox, ttk
 
 import theme
-from palette import TI_COLORS, PalettePanel
+from palette import TI_COLORS, PalettePopup
 from project import ChangeEvent
 from tile_canvas import TILE_PIXEL_SCALE_MIN, TileCanvas
 from tile_model import copy_tile
@@ -18,10 +18,11 @@ class TilesetEditorWindow:
         self.undo_stack = UndoStack(max_size=10)
         self._color_target_row = None
         self._color_target_channel = None
+        self._palette_popup = None
 
         self.root.title("burglekutt — Tileset")
         min_canvas = 8 * TILE_PIXEL_SCALE_MIN
-        self.root.minsize(480, min_canvas + 120)
+        self.root.minsize(min_canvas + 80, min_canvas + 120)
 
         self._window_bg = theme.TILESET_WINDOW_BG
         theme.apply_window_theme(self.root, self._window_bg)
@@ -91,13 +92,6 @@ class TilesetEditorWindow:
         self.tile_canvas.on_swatch_select(self._on_swatch_select)
         self.tile_canvas.on_pixel_change(self._on_pixel_change)
 
-        palette_frame = ttk.Labelframe(content, text="Palette", padding=8)
-        palette_frame.pack(side=tk.LEFT, fill=tk.Y, padx=(8, 0))
-
-        self.palette_panel = PalettePanel(palette_frame, window_bg=self._window_bg)
-        self.palette_panel.pack()
-        self.palette_panel.on_color_pick(self._on_palette_color_pick)
-
     def _build_status_bar(self):
         status_frame = tk.Frame(self._main_frame, bg=self._window_bg)
         theme.register_frame(status_frame)
@@ -120,11 +114,31 @@ class TilesetEditorWindow:
         self.project.set_pixel(row, col, bit)
         self._update_edit_menu_state()
 
-    def _on_swatch_select(self, row, channel):
+    def _close_palette_popup(self):
+        if self._palette_popup is not None:
+            self._palette_popup.close()
+            self._palette_popup = None
+
+    def _on_swatch_select(self, row, channel, x_root=None, y_root=None):
         self._color_target_row = row
         self._color_target_channel = channel
-        self.palette_panel.set_target(row, channel)
+        self.tile_canvas.set_active_target(row, channel)
+        self._close_palette_popup()
+        self._palette_popup = PalettePopup(
+            self.root,
+            row,
+            channel,
+            self._on_palette_color_pick,
+            on_close=self._on_palette_closed,
+            x_root=x_root,
+            y_root=y_root,
+        )
         self._update_status()
+
+    def _on_palette_closed(self):
+        self._palette_popup = None
+        theme.apply_window_theme(self.root, self._window_bg)
+        self.tile_canvas.refresh()
 
     def _on_palette_color_pick(self, color_index):
         if self._color_target_row is None or self._color_target_channel is None:
@@ -132,6 +146,7 @@ class TilesetEditorWindow:
         self._push_undo_snapshot()
         kwargs = {self._color_target_channel: color_index}
         self.project.set_row_color(self._color_target_row, **kwargs)
+        self.tile_canvas.suppress_next_stroke()
         self._update_edit_menu_state()
         self._update_status(color_index=color_index)
 
@@ -199,6 +214,7 @@ class TilesetEditorWindow:
         )
 
     def _on_close(self, event=None):
+        self._close_palette_popup()
         self.project.remove_listener(self._on_project_change)
         self.root.quit()
         self.root.destroy()

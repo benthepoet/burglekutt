@@ -39,6 +39,12 @@ def register_frame(frame):
             pass
 
 
+def unregister_frame(frame):
+    """Stop applying global window theme to a frame."""
+    if frame in _themed_frames:
+        _themed_frames.remove(frame)
+
+
 def _button_border_colors(window_bg):
     if window_bg == METATILE_WINDOW_BG:
         return "#C4B5A5", "#FFF8F0", "#DFC8B5"
