@@ -332,7 +332,18 @@ A separate window for choosing which of the 256 tileset slots to edit.
 - **Reuse:** same tile picker when the metatile editor assigns a base-tile index — title differs (`Select Tile for Cell` vs `Select Tile to Edit`).
 - **Metatile picker:** separate 16×16 thumbnail grid (or scrollable equivalent) for up to 256 defined metatiles; used when the supertile editor assigns a metatile to a cell.
 
-Thumbnail size should be readable but compact enough that the full 16×16 grid fits without scrolling on a typical display (e.g. 2× or 3× scale per pixel).
+**Thumbnail scale** — define in `tile_picker.py` (reuse `composite.py` for resolved pixels):
+
+| Constant | Value | Notes |
+|----------|-------|-------|
+| `PICKER_TILE_SCALE_DEFAULT` | **3** | 8×8 tile → **24×24 px** thumbnail |
+| `PICKER_TILE_SCALE_MIN` | **2** | 16×16 px minimum; thumbnails must stay recognizable |
+| `PICKER_CELL_GAP` | **2** | Pixels between cells (plus room for accent border) |
+
+- Full **16×16 grid visible without scrolling** on a typical display (~1080p) at default scale (~440×440 px grid including gaps).
+- Thumbnails use the same resolved-color rendering as the edit canvas (pattern + per-line colors).
+- Do not shrink picker thumbnails below `PICKER_TILE_SCALE_MIN`; size the picker window accordingly.
+- Picker scale is **independent** of `TILE_PIXEL_SCALE_*` on the edit canvas — picker stays compact; edit canvas stays large.
 
 ## Tile editor — development phases
 
@@ -359,8 +370,8 @@ Build **one phase at a time**. After each phase, stop and report completion befo
 ### Phase 3: Tileset management + tile picker
 
 - 256 fixed tile slots in memory (indices 0–255; default names `TIL00`–`TILFF`)
-- **Tile picker window:** 16×16 thumbnail grid; click to switch active edit slot
-- Thumbnails live-update when a tile is edited; **accent border** on the active slot in the picker
+- **Tile picker window:** 16×16 thumbnail grid at `PICKER_TILE_SCALE_DEFAULT`; click to switch active edit slot
+- Thumbnails live-update when a tile is edited; **accent border** on the active slot; full grid fits without scrolling
 - Clear tile, duplicate-to-slot (destination chosen via tile picker), optional per-tile rename
 - No add/remove — slot count is always 256
 
@@ -577,7 +588,7 @@ Each editor window's export panel shows that level's data (and full-table export
 | Data model | `tile_model.py` | Structs, validation, deep copy helpers |
 | Compositing | `composite.py` | Metatile/supertile pixel resolution from tile data |
 | Canvas | `tile_canvas.py` | 8×8 tile grid + per-row fg/bg column |
-| Tile picker | `tile_picker.py` | 16×16 thumbnail grid; accent border on active slot |
+| Tile picker | `tile_picker.py` | 16×16 grid at `PICKER_TILE_SCALE_*`; accent border on active slot |
 | Metatile picker | `metatile_picker.py` | Thumbnail grid for defined metatiles (up to 256) |
 | Palette | `palette.py` | Color constants, swatch widgets |
 | Pattern bytes | `pattern_export.py` | 8×8 bitplane → 8-byte TMS9918 pattern encoding |
