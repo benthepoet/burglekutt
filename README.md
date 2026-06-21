@@ -1,6 +1,8 @@
+![Burglekutt from Willow](l5PBu.jpg)
+
 # burglekutt
 
-A desktop authoring toolchain for a TI-99/4A Zelda-like game. **burglekutt** lets you draw TMS9918 Graphics II tiles, compose them into metatiles and supertiles, and export assembly or binary data your game can load directly.
+Named after Burglekutt from *Willow*. A desktop authoring toolchain for a TI-99/4A Zelda-like game. **burglekutt** lets you draw TMS9918 Graphics II tiles, compose them into metatiles and supertiles, and export assembly or binary data your game can load directly.
 
 The tile editor is **complete**. A map/screen editor (placing supertiles on playfields) is planned as a follow-on app in this repo.
 
