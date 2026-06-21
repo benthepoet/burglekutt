@@ -265,9 +265,15 @@ Implementation requirements:
 - **Supertile window:** supertile list + add/remove/rename (left), 4×5 picker + composite + export (center)
 - **Shared:** status bar per window showing that editor's active slot; **File** menu (New/Load/Save/Exit) on each window or one coordinator — must not desync project state
 - **No Mode menu** — replaced by **Window** menu (focus Tileset / Metatile / Supertile)
-- Zoom: each pixel at least 16–20 screen pixels on the tileset draw grid
-
 ### Tile editing canvas (tileset mode)
+
+The tile canvas must be **large enough to draw comfortably** — this is the primary workspace and must not feel cramped. Define scale constants in `tile_canvas.py` (or `palette.py` if shared).
+
+| Constant | Value | Notes |
+|----------|-------|-------|
+| `TILE_PIXEL_SCALE_DEFAULT` | **32** | Screen pixels per pattern pixel (8×8 → **256×256** draw area) |
+| `TILE_PIXEL_SCALE_MIN` | **24** | Hard minimum (8×8 → 192×192); never render smaller |
+| `TILE_PIXEL_SCALE_MAX` | **48** | Optional zoom-in ceiling |
 
 The tile canvas is a single composite widget: the 8×8 draw area on the left, and a **per-row color column** on the right.
 
@@ -289,6 +295,15 @@ The tile canvas is a single composite widget: the 8×8 draw area on the left, an
 - Drawing on the grid: left click/drag = set pixel to `1` (foreground), right click/drag = set pixel to `0` (background).
 - The grid renders resolved colors per pixel using that row's fg/bg pair.
 - Highlight the active row (selected swatch pair or last-edited row) so fg/bg edits are unambiguous.
+
+**Sizing rules:**
+
+- At default scale (32×), the pattern grid alone is **256×256 px** — large enough for precise pixel placement with the mouse.
+- Fg/bg swatch column: each swatch at least **20×20 px**, row height matched to pattern row height (32 px at default scale).
+- Visible **grid lines** between pattern pixels at all supported scales.
+- Tileset window minimum size must accommodate the full canvas at `TILE_PIXEL_SCALE_MIN` without clipping (pattern grid + swatch column + palette sidebar).
+- Optional **View → Zoom In / Zoom Out** (or +/- keys) adjusts scale in steps between min and max; default restored on new session is fine.
+- Do not shrink the draw grid below `TILE_PIXEL_SCALE_MIN` when the window is resized — scroll or clamp window size instead.
 
 ### Tile picker window (tileset mode)
 
@@ -326,11 +341,12 @@ Build **one phase at a time**. After each phase, stop and report completion befo
 ### Phase 1: Shell + tileset canvas
 
 - `editor.py` creates shared `Project` and opens the **tileset editor** window (metatile/supertile windows stubbed or hidden until later phases)
-- 8×8 drawing canvas with visible grid and zoom
+- 8×8 drawing canvas at **`TILE_PIXEL_SCALE_DEFAULT` (32×)** with visible grid lines
+- Enforce `TILE_PIXEL_SCALE_MIN` — canvas must not be too small to use
 - Status bar, menu skeleton (File, Window, Help)
 - Single in-memory tile in shared project
 
-**Deliverable:** `python3 src/editor.py` runs and shows the tileset editor with an empty 8×8 grid.
+**Deliverable:** `python3 src/editor.py` runs and shows a comfortably sized 8×8 grid (256×256 px draw area at default scale).
 
 ### Phase 2: Palette + drawing + line colors
 
@@ -622,6 +638,7 @@ Preserve unless the user explicitly changes product behavior:
 - Do not let editor windows hold divergent copies of tile/metatile/supertile data.
 - Do not reference or depend on code, docs, or conventions from outside this repository in project files unless the user explicitly asks.
 - Do not implement map/screen editor features during tile-editor phases unless the user explicitly asks.
+- Do not ship a tile draw canvas smaller than `TILE_PIXEL_SCALE_MIN` — pixel editing must remain practical.
 
 ## License
 
