@@ -29,6 +29,7 @@ class ChangeEvent:
     ACTIVE_METATILE_CHANGED = "active_metatile_changed"
     SUPERTILE_CHANGED = "supertile_changed"
     ACTIVE_SUPERTILE_CHANGED = "active_supertile_changed"
+    PROJECT_LOADED = "project_loaded"
 
     def __init__(self, kind, index=0):
         self.kind = kind
@@ -276,3 +277,23 @@ class Project:
     def replace_active_tile(self, tile):
         self.tiles[self.active_tile_index] = tile
         self.notify(ChangeEvent(ChangeEvent.TILE_CHANGED, self.active_tile_index))
+
+    def load_from_dict(self, data):
+        """Replace project data from a normalized project dict."""
+        self.tiles = data["tiles"]
+        self.metatiles = data["metatiles"]
+        self.supertiles = data["supertiles"]
+        self.active_tile_index = 0
+        self.active_metatile_index = 0 if self.metatiles else 0
+        self.active_supertile_index = 0 if self.supertiles else 0
+        self.notify(ChangeEvent(ChangeEvent.PROJECT_LOADED))
+
+    def reset(self):
+        """Reset to a new empty project."""
+        self.tiles = default_tileset()
+        self.active_tile_index = 0
+        self.metatiles = [empty_metatile(metatile_name_for_index(0))]
+        self.active_metatile_index = 0
+        self.supertiles = []
+        self.active_supertile_index = 0
+        self.notify(ChangeEvent(ChangeEvent.PROJECT_LOADED))

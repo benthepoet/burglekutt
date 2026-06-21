@@ -4,6 +4,7 @@ import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 
 import theme
+from export_preview import MODE_ASSEMBLY, MODE_BINARY, SCOPE_TILESET, show_export_preview
 from palette import TI_COLORS, PalettePopup
 from project import ChangeEvent
 from tile_canvas import TILE_PIXEL_SCALE_MIN, TileCanvas
@@ -23,6 +24,7 @@ class TilesetEditorWindow:
         self._palette_popup = None
         self._tile_picker = None
         self._assign_picker = None
+        self._export_preview = None
         self._stroke_dirty = False
         self._skip_tile_refresh = False
 
@@ -58,9 +60,9 @@ class TilesetEditorWindow:
 
         file_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="File", menu=file_menu)
-        file_menu.add_command(label="New", command=self._not_implemented)
-        file_menu.add_command(label="Load Project", command=self._not_implemented)
-        file_menu.add_command(label="Save Project", command=self._not_implemented)
+        file_menu.add_command(label="New", command=self._new_project)
+        file_menu.add_command(label="Load Project", command=self._load_project)
+        file_menu.add_command(label="Save Project", command=self._save_project)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self._exit_app)
 
@@ -75,6 +77,17 @@ class TilesetEditorWindow:
         tiles_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Tiles", menu=tiles_menu)
         tiles_menu.add_command(label="Select Tile…", command=self._open_tile_picker)
+
+        export_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Export", menu=export_menu)
+        export_menu.add_command(
+            label="Save Assembly…",
+            command=self._preview_assembly,
+        )
+        export_menu.add_command(
+            label="Save Binary…",
+            command=self._preview_binary,
+        )
 
         window_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Window", menu=window_menu)
@@ -323,8 +336,39 @@ class TilesetEditorWindow:
 
         self._status_label.config(text="  |  ".join(parts))
 
+    def _close_export_preview(self):
+        if self._export_preview is not None:
+            self._export_preview.close()
+            self._export_preview = None
+
+    def _preview_assembly(self, event=None):
+        self._close_export_preview()
+        self._export_preview = show_export_preview(
+            self.root,
+            self.project,
+            SCOPE_TILESET,
+            MODE_ASSEMBLY,
+            self._window_bg,
+        )
+
+    def _preview_binary(self, event=None):
+        self._close_export_preview()
+        self._export_preview = show_export_preview(
+            self.root,
+            self.project,
+            SCOPE_TILESET,
+            MODE_BINARY,
+            self._window_bg,
+        )
+
     def _on_project_change(self, event):
-        if event.kind == ChangeEvent.ACTIVE_TILE_CHANGED:
+        if event.kind == ChangeEvent.PROJECT_LOADED:
+            self.undo_stack.clear()
+            self.tile_canvas.refresh()
+            self._update_tile_sidebar()
+            self._update_status()
+            self._update_edit_menu_state()
+        elif event.kind == ChangeEvent.ACTIVE_TILE_CHANGED:
             self.undo_stack.clear()
             self.tile_canvas.refresh()
             self._update_tile_sidebar()
@@ -345,6 +389,7 @@ class TilesetEditorWindow:
             self._update_status()
 
     def shutdown(self):
+        self._close_export_preview()
         self._close_palette_popup()
         if self._tile_picker is not None:
             self._tile_picker.close()
@@ -376,13 +421,22 @@ class TilesetEditorWindow:
         else:
             self._on_close()
 
-    def _not_implemented(self, event=None):
-        messagebox.showinfo("Not implemented", "Available in a later phase.")
+    def _new_project(self, event=None):
+        if self.coordinator is not None:
+            self.coordinator.new_project()
+
+    def _load_project(self, event=None):
+        if self.coordinator is not None:
+            self.coordinator.load_project_dialog()
+
+    def _save_project(self, event=None):
+        if self.coordinator is not None:
+            self.coordinator.save_project_dialog()
 
     def _show_about(self, event=None):
         messagebox.showinfo(
             "About burglekutt",
-            "burglekutt — TI-99 tile editor\nPhase 5: supertile editor",
+            "burglekutt — TI-99 tile editor\nPhase 6: project I/O and export",
         )
 
     def _on_close(self, event=None):

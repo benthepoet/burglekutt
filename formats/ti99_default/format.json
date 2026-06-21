@@ -1,0 +1,15 @@
+{
+  "name": "TI-99 Default",
+  "byte_keyword": "BYTE",
+  "hex_prefix": ">",
+  "indent": "    ",
+  "comment_prefix": ";",
+  "labels": {
+    "patterns": "PATTERNS",
+    "colors": "COLORS",
+    "metas": "METAS",
+    "metas_end": "METASEND",
+    "supers": "SUPERS",
+    "supers_end": "SUPERSEND"
+  }
+}

@@ -5,6 +5,7 @@ from tkinter import messagebox, simpledialog, ttk
 
 import theme
 from composite import metatile_references_tile, resolve_metatile_pixels, resolve_tile_pixels
+from export_preview import MODE_ASSEMBLY, MODE_BINARY, SCOPE_METATILE, show_export_preview
 from pixel_canvas import draw_pixel_grid
 from project import ChangeEvent
 from tile_model import (
@@ -31,6 +32,7 @@ class MetatileEditorWindow:
         self.project = project
         self.coordinator = coordinator
         self._assign_picker = None
+        self._export_preview = None
         self._flag_vars = {}
 
         self.root.title("burglekutt — Metatile")
@@ -62,11 +64,22 @@ class MetatileEditorWindow:
 
         file_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="File", menu=file_menu)
-        file_menu.add_command(label="New", command=self._not_implemented)
-        file_menu.add_command(label="Load Project", command=self._not_implemented)
-        file_menu.add_command(label="Save Project", command=self._not_implemented)
+        file_menu.add_command(label="New", command=self._new_project)
+        file_menu.add_command(label="Load Project", command=self._load_project)
+        file_menu.add_command(label="Save Project", command=self._save_project)
         file_menu.add_separator()
         file_menu.add_command(label="Exit", command=self._exit_app)
+
+        export_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Export", menu=export_menu)
+        export_menu.add_command(
+            label="Save Assembly…",
+            command=self._preview_assembly,
+        )
+        export_menu.add_command(
+            label="Save Binary…",
+            command=self._preview_binary,
+        )
 
         window_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Window", menu=window_menu)
@@ -205,6 +218,7 @@ class MetatileEditorWindow:
                 )
                 self._cell_widgets.append(cell)
 
+
     def _build_status_bar(self):
         status_frame = tk.Frame(self._main_frame, bg=self._window_bg)
         theme.register_frame(status_frame, self.root, self._window_bg)
@@ -217,8 +231,34 @@ class MetatileEditorWindow:
         )
         self._status_label.pack(fill=tk.X)
 
+    def _close_export_preview(self):
+        if self._export_preview is not None:
+            self._export_preview.close()
+            self._export_preview = None
+
+    def _preview_assembly(self, _event=None):
+        self._close_export_preview()
+        self._export_preview = show_export_preview(
+            self.root,
+            self.project,
+            SCOPE_METATILE,
+            MODE_ASSEMBLY,
+            self._window_bg,
+        )
+
+    def _preview_binary(self, _event=None):
+        self._close_export_preview()
+        self._export_preview = show_export_preview(
+            self.root,
+            self.project,
+            SCOPE_METATILE,
+            MODE_BINARY,
+            self._window_bg,
+        )
+
     def shutdown(self):
         self._close_assign_picker()
+        self._close_export_preview()
         self.project.remove_listener(self._on_project_change)
 
     def focus(self):
@@ -251,13 +291,22 @@ class MetatileEditorWindow:
         else:
             self._on_close()
 
-    def _not_implemented(self, _event=None):
-        messagebox.showinfo("Not implemented", "Available in a later phase.")
+    def _new_project(self, _event=None):
+        if self.coordinator is not None:
+            self.coordinator.new_project()
+
+    def _load_project(self, _event=None):
+        if self.coordinator is not None:
+            self.coordinator.load_project_dialog()
+
+    def _save_project(self, _event=None):
+        if self.coordinator is not None:
+            self.coordinator.save_project_dialog()
 
     def _show_about(self, _event=None):
         messagebox.showinfo(
             "About burglekutt",
-            "burglekutt — TI-99 tile editor\nPhase 5: supertile editor",
+            "burglekutt — TI-99 tile editor\nPhase 6: project I/O and export",
         )
 
     def _on_close(self, _event=None):
@@ -434,7 +483,10 @@ class MetatileEditorWindow:
         self._status_label.config(text="  |  ".join(parts))
 
     def _on_project_change(self, event):
-        if event.kind == ChangeEvent.TILE_CHANGED:
+        if event.kind == ChangeEvent.PROJECT_LOADED:
+            self._refresh_metatile_list()
+            self._refresh_active_metatile()
+        elif event.kind == ChangeEvent.TILE_CHANGED:
             if (
                 self.project.metatiles
                 and metatile_references_tile(

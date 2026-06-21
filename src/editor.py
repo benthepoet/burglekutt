@@ -2,9 +2,11 @@
 """burglekutt tile editor entry point."""
 
 import tkinter as tk
+from tkinter import filedialog, messagebox
 
 from metatile_editor import MetatileEditorWindow
 from project import Project
+from project_io import load_project, save_project
 from supertile_editor import SupertileEditorWindow
 from tileset_editor import TilesetEditorWindow
 
@@ -12,6 +14,7 @@ from tileset_editor import TilesetEditorWindow
 class TileEditorApp:
     def __init__(self):
         self.project = Project()
+        self.project_path = None
         self.root = tk.Tk()
         self.root.withdraw()
         self._editors = []
@@ -94,6 +97,61 @@ class TileEditorApp:
 
     def focus_supertile(self):
         self.open_or_focus_supertile()
+
+    def new_project(self):
+        if not messagebox.askyesno(
+            "New Project",
+            "Discard the current project and start a new one?",
+            parent=self.root,
+        ):
+            return
+        self.project.reset()
+        self.project_path = None
+        self._update_titles()
+
+    def load_project_dialog(self):
+        path = filedialog.askopenfilename(
+            parent=self.root,
+            title="Load Project",
+            filetypes=[("burglekutt project", "*.json"), ("All", "*.*")],
+        )
+        if not path:
+            return
+        try:
+            data = load_project(path)
+        except (OSError, ValueError) as exc:
+            messagebox.showerror("Load Project", str(exc), parent=self.root)
+            return
+        self.project.load_from_dict(data)
+        self.project_path = path
+        self._update_titles()
+
+    def save_project_dialog(self):
+        path = self.project_path
+        if not path:
+            path = filedialog.asksaveasfilename(
+                parent=self.root,
+                title="Save Project",
+                defaultextension=".json",
+                filetypes=[("burglekutt project", "*.json"), ("All", "*.*")],
+            )
+            if not path:
+                return
+        try:
+            save_project(path, self.project)
+        except OSError as exc:
+            messagebox.showerror("Save Project", str(exc), parent=self.root)
+            return
+        self.project_path = path
+        self._update_titles()
+
+    def _update_titles(self):
+        suffix = ""
+        if self.project_path:
+            suffix = " — {}".format(self.project_path)
+        for editor in self._editors:
+            base = editor.root.title().split(" — ")[0]
+            editor.root.title(base + suffix)
 
     def run(self):
         self.root.mainloop()
