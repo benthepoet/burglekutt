@@ -6,13 +6,20 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from tile_model import (
     DEFAULT_TILE_NAME,
+    METATILE_FLAG_HURT,
+    METATILE_FLAG_SOLID,
     TILE_COUNT,
     TILE_SIZE,
     copy_tile,
     default_colors,
     default_tileset,
+    empty_metatile,
     empty_pattern,
     empty_tile,
+    flags_has,
+    flags_set,
+    flags_summary,
+    metatile_name_for_index,
     tile_name_for_index,
     validate_tile_name,
 )
@@ -61,6 +68,22 @@ class TestTileModel(unittest.TestCase):
         self.assertEqual(validate_tile_name("  ROCK  "), "ROCK")
         with self.assertRaises(ValueError):
             validate_tile_name("   ")
+
+    def test_empty_metatile_defaults(self):
+        metatile = empty_metatile()
+        self.assertEqual(metatile["name"], "MT00")
+        self.assertEqual(metatile["flags"], 0)
+        self.assertEqual(metatile["cells"], [0, 0, 0, 0])
+
+    def test_metatile_name_for_index(self):
+        self.assertEqual(metatile_name_for_index(0), "MT00")
+        self.assertEqual(metatile_name_for_index(255), "MTFF")
+
+    def test_flags_helpers(self):
+        flags = flags_set(0, METATILE_FLAG_SOLID, True)
+        flags = flags_set(flags, METATILE_FLAG_HURT, True)
+        self.assertTrue(flags_has(flags, METATILE_FLAG_SOLID))
+        self.assertEqual(flags_summary(flags), "SH")
 
 
 if __name__ == "__main__":

@@ -25,24 +25,22 @@ ACCENT_BORDER = "#2563EB"
 
 _themed_frames = []
 _ui_style = None
-_current_window_bg = None
 
 
-def register_frame(frame):
-    """Track a frame and apply the current window background immediately."""
-    if frame not in _themed_frames:
-        _themed_frames.append(frame)
-    if _current_window_bg is not None:
-        try:
-            frame.configure(bg=_current_window_bg)
-        except tk.TclError:
-            pass
+def register_frame(frame, root, window_bg):
+    """Track a frame for a specific top-level window."""
+    entry = (frame, root, window_bg)
+    if entry not in _themed_frames:
+        _themed_frames.append(entry)
+    try:
+        frame.configure(bg=window_bg)
+    except tk.TclError:
+        pass
 
 
 def unregister_frame(frame):
-    """Stop applying global window theme to a frame."""
-    if frame in _themed_frames:
-        _themed_frames.remove(frame)
+    """Stop applying window theme to a frame."""
+    _themed_frames[:] = [entry for entry in _themed_frames if entry[0] is not frame]
 
 
 def _button_border_colors(window_bg):
@@ -105,18 +103,18 @@ def _configure_theme_style(style, style_name, background, *, button=False, foreg
 
 
 def apply_window_theme(root, window_bg):
-    """Apply tinted window background and ttk styles."""
-    global _ui_style, _current_window_bg
-    _current_window_bg = window_bg
+    """Apply tinted window background and ttk styles for one top-level window."""
+    global _ui_style
     if _ui_style is None:
         _ui_style = ttk.Style(root)
 
     root.configure(bg=window_bg)
-    for frame in _themed_frames:
-        try:
-            frame.configure(bg=window_bg)
-        except tk.TclError:
-            pass
+    for frame, frame_root, frame_bg in _themed_frames:
+        if frame_root == root:
+            try:
+                frame.configure(bg=frame_bg)
+            except tk.TclError:
+                pass
 
     text_fg = TEXT_FG
     for name in ("TFrame", "TLabelframe"):

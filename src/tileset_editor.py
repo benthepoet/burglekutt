@@ -13,9 +13,10 @@ from undo_stack import UndoStack
 
 
 class TilesetEditorWindow:
-    def __init__(self, root, project):
+    def __init__(self, root, project, coordinator=None):
         self.root = root
         self.project = project
+        self.coordinator = coordinator
         self.undo_stack = UndoStack(max_size=10)
         self._color_target_row = None
         self._color_target_channel = None
@@ -31,7 +32,7 @@ class TilesetEditorWindow:
         theme.apply_window_theme(self.root, self._window_bg)
 
         self._main_frame = tk.Frame(self.root, bg=self._window_bg)
-        theme.register_frame(self._main_frame)
+        theme.register_frame(self._main_frame, self.root, self._window_bg)
         self._main_frame.pack(fill=tk.BOTH, expand=True)
 
         self._build_menus()
@@ -41,6 +42,7 @@ class TilesetEditorWindow:
 
         self.project.add_listener(self._on_project_change)
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+        self.root.bind("<FocusIn>", self._on_focus)
         self._bind_shortcuts()
 
         self._update_status()
@@ -57,7 +59,7 @@ class TilesetEditorWindow:
         file_menu.add_command(label="Load Project", command=self._not_implemented)
         file_menu.add_command(label="Save Project", command=self._not_implemented)
         file_menu.add_separator()
-        file_menu.add_command(label="Exit", command=self._on_close)
+        file_menu.add_command(label="Exit", command=self._exit_app)
 
         self._edit_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Edit", menu=self._edit_menu)
@@ -73,12 +75,9 @@ class TilesetEditorWindow:
 
         window_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Window", menu=window_menu)
-        window_menu.add_command(label="Tileset", command=self._focus_window)
+        window_menu.add_command(label="Tileset", command=self.focus)
         window_menu.add_command(label="Tile Picker", command=self._open_tile_picker)
-        window_menu.add_command(
-            label="Metatile (Phase 4)",
-            state=tk.DISABLED,
-        )
+        window_menu.add_command(label="Metatile", command=self._focus_metatile)
         window_menu.add_command(
             label="Supertile (Phase 5)",
             state=tk.DISABLED,
@@ -90,14 +89,19 @@ class TilesetEditorWindow:
 
     def _build_layout(self):
         content = tk.Frame(self._main_frame, bg=self._window_bg)
-        theme.register_frame(content)
+        theme.register_frame(content, self.root, self._window_bg)
         content.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
         center = tk.Frame(content, bg=self._window_bg)
-        theme.register_frame(center)
+        theme.register_frame(center, self.root, self._window_bg)
         center.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
 
-        self.tile_canvas = TileCanvas(center, self.project, window_bg=self._window_bg)
+        self.tile_canvas = TileCanvas(
+            center,
+            self.project,
+            window_bg=self._window_bg,
+            root=self.root,
+        )
         self.tile_canvas.pack()
         self.tile_canvas.on_swatch_select(self._on_swatch_select)
         self.tile_canvas.on_pixel_change(self._on_pixel_change)
@@ -125,7 +129,7 @@ class TilesetEditorWindow:
 
     def _build_status_bar(self):
         status_frame = tk.Frame(self._main_frame, bg=self._window_bg)
-        theme.register_frame(status_frame)
+        theme.register_frame(status_frame, self.root, self._window_bg)
         status_frame.pack(fill=tk.X, side=tk.BOTTOM, padx=8, pady=(0, 6))
 
         self._status_label = ttk.Label(status_frame, anchor=tk.W)
@@ -303,20 +307,7 @@ class TilesetEditorWindow:
             self._update_tile_sidebar()
             self._update_status()
 
-    def _focus_window(self):
-        self.root.lift()
-        self.root.focus_force()
-
-    def _not_implemented(self, event=None):
-        messagebox.showinfo("Not implemented", "Available in a later phase.")
-
-    def _show_about(self, event=None):
-        messagebox.showinfo(
-            "About burglekutt",
-            "burglekutt — TI-99 tile editor\nPhase 3: tileset management",
-        )
-
-    def _on_close(self, event=None):
+    def shutdown(self):
         self._close_palette_popup()
         if self._tile_picker is not None:
             self._tile_picker.close()
@@ -325,5 +316,37 @@ class TilesetEditorWindow:
             self._assign_picker.close()
             self._assign_picker = None
         self.project.remove_listener(self._on_project_change)
-        self.root.quit()
-        self.root.destroy()
+
+    def focus(self):
+        self.root.lift()
+        self.root.focus_force()
+        theme.apply_window_theme(self.root, self._window_bg)
+
+    def _on_focus(self, _event=None):
+        theme.apply_window_theme(self.root, self._window_bg)
+
+    def _focus_metatile(self):
+        if self.coordinator is not None:
+            self.coordinator.focus_metatile()
+
+    def _exit_app(self, _event=None):
+        if self.coordinator is not None:
+            self.coordinator.exit_all()
+        else:
+            self._on_close()
+
+    def _not_implemented(self, event=None):
+        messagebox.showinfo("Not implemented", "Available in a later phase.")
+
+    def _show_about(self, event=None):
+        messagebox.showinfo(
+            "About burglekutt",
+            "burglekutt — TI-99 tile editor\nPhase 4: metatile editor",
+        )
+
+    def _on_close(self, event=None):
+        if self.coordinator is not None:
+            self.coordinator.request_close(self)
+        else:
+            self.shutdown()
+            self.root.destroy()

@@ -51,11 +51,19 @@ def swatch_column_width(scale):
 class TileCanvas(tk.Frame):
     """Composite widget: 8x8 pattern grid plus per-row fg/bg swatches."""
 
-    def __init__(self, parent, project, scale=TILE_PIXEL_SCALE_DEFAULT, window_bg=None):
+    def __init__(
+        self,
+        parent,
+        project,
+        scale=TILE_PIXEL_SCALE_DEFAULT,
+        window_bg=None,
+        root=None,
+    ):
         super().__init__(parent, bg=window_bg or parent.cget("bg"))
         self.project = project
         self.scale = clamp_scale(scale)
         self._window_bg = window_bg or parent.cget("bg")
+        self._root = root or parent.winfo_toplevel()
         self._active_row = None
         self._active_channel = None
         self._swatch_select_callbacks = []
@@ -65,7 +73,7 @@ class TileCanvas(tk.Frame):
         self._swatch_widgets = []
 
         self._body = tk.Frame(self, bg=self._window_bg)
-        theme.register_frame(self._body)
+        theme.register_frame(self._body, self._root, self._window_bg)
         self._body.pack()
 
         width, height = canvas_pixel_size(self.scale)
@@ -80,7 +88,7 @@ class TileCanvas(tk.Frame):
         self.canvas.pack(side=tk.LEFT)
 
         self._swatch_column = tk.Frame(self._body, bg=self._window_bg)
-        theme.register_frame(self._swatch_column)
+        theme.register_frame(self._swatch_column, self._root, self._window_bg)
         self._swatch_column.pack(side=tk.LEFT, padx=(4, 0))
         self._build_swatch_column(height)
 
@@ -100,12 +108,12 @@ class TileCanvas(tk.Frame):
 
         for row in range(TILE_SIZE):
             row_frame = tk.Frame(self._swatch_column, bg=self._window_bg, height=scale)
-            theme.register_frame(row_frame)
+            theme.register_frame(row_frame, self._root, self._window_bg)
             row_frame.pack(fill=tk.X)
             row_frame.pack_propagate(False)
 
             inner = tk.Frame(row_frame, bg=self._window_bg)
-            theme.register_frame(inner)
+            theme.register_frame(inner, self._root, self._window_bg)
             inner.pack(pady=max(0, (scale - size) // 2))
 
             fg = tk.Frame(

@@ -5,16 +5,24 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from project import ChangeEvent, Project
-from tile_model import TILE_COUNT, copy_tile, empty_tile, tile_name_for_index
+from tile_model import (
+    METATILE_FLAG_SOLID,
+    TILE_COUNT,
+    copy_tile,
+    empty_tile,
+    metatile_name_for_index,
+    tile_name_for_index,
+)
 
 
 class TestProject(unittest.TestCase):
-    def test_starts_with_256_tiles(self):
+    def test_starts_with_256_tiles_and_default_metatile(self):
         project = Project()
         self.assertEqual(len(project.tiles), TILE_COUNT)
         self.assertEqual(project.active_tile_index, 0)
         self.assertEqual(project.get_active_tile()["name"], tile_name_for_index(0))
-        self.assertEqual(project.metatiles, [])
+        self.assertEqual(len(project.metatiles), 1)
+        self.assertEqual(project.get_active_metatile()["name"], metatile_name_for_index(0))
         self.assertEqual(project.supertiles, [])
 
     def test_notify_calls_listeners(self):
@@ -79,6 +87,30 @@ class TestProject(unittest.TestCase):
         self.assertEqual(project.get_tile(0)["name"], "WALL")
         with self.assertRaises(ValueError):
             project.rename_tile(0, "   ")
+
+    def test_add_and_remove_metatile(self):
+        project = Project()
+        project.add_metatile()
+        self.assertEqual(len(project.metatiles), 2)
+        self.assertEqual(project.active_metatile_index, 1)
+        project.remove_metatile(0)
+        self.assertEqual(len(project.metatiles), 1)
+        self.assertEqual(project.active_metatile_index, 0)
+
+    def test_set_metatile_cell_and_flag(self):
+        project = Project()
+        project.set_metatile_cell(0, 2, 9)
+        self.assertEqual(project.get_metatile(0)["cells"][2], 9)
+        project.set_metatile_flag(0, METATILE_FLAG_SOLID, True)
+        self.assertEqual(project.get_metatile(0)["flags"], METATILE_FLAG_SOLID)
+
+    def test_set_active_metatile_index_notifies(self):
+        project = Project()
+        project.add_metatile()
+        events = []
+        project.add_listener(events.append)
+        project.set_active_metatile_index(0)
+        self.assertEqual(events[-1].kind, ChangeEvent.ACTIVE_METATILE_CHANGED)
 
 
 if __name__ == "__main__":
