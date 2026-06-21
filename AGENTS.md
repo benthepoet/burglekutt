@@ -20,7 +20,7 @@ The tile editor is a desktop app with **three simultaneous windows** (tileset, m
 | **Metatile set** | up to 256 metatiles | — | Composed chunks referencing base tiles |
 | **Metatile** | 2×2 base tiles | 16×16 | Reusable terrain/object chunks |
 | **Supertile set** | up to 256 supertiles | — | Composed blocks referencing metatiles |
-| **Supertile** | 4×5 metatiles | 64×80 | Screen-building blocks for the playfield |
+| **Supertile** | 4×4 metatiles | 64×64 | Screen-building blocks for the playfield |
 
 The editor must produce data the game can consume directly — **pattern bytes**, **color-table bytes**, metatile tables, and supertile maps — as assembly `BYTE` blocks (`PATTERNS`, `COLORS`, `METAS`, `SUPERS`).
 
@@ -113,12 +113,12 @@ The game reads the flags byte at runtime for collision and interaction; graphics
 - **Up to 256 supertiles** (indices 0–255); default names `ST00`–`STFF`
 - Add and remove supertiles in the supertile editor; block add when count would exceed 256
 - Indices are dense: `0 .. count-1`
-- Export emits 20 bytes per defined supertile
+- Export emits 16 bytes per defined supertile
 
 ### Supertile
 
-- 4×5 grid of **metatile indices** (20 bytes per supertile)
-- Row-major order: four columns across, five rows down
+- 4×4 grid of **metatile indices** (16 bytes per supertile)
+- Row-major order: four columns across, four rows down
 - Each cell value must be a valid metatile index for the current project (`0 .. metatile_count-1`)
 
 ```asm
@@ -127,14 +127,13 @@ SUPERS
     BYTE >03,>04,>01,>02   ; row 1
     BYTE >02,>02,>01,>00   ; row 2
     BYTE >01,>01,>03,>03   ; row 3
-    BYTE >00,>00,>00,>00   ; row 4
-    ; ... up to 256 supertiles × 20 bytes ...
+    ; ... up to 256 supertiles × 16 bytes ...
 SUPERSEND
 ```
 
 ### Screens & world (map editor — follow-on)
 
-Screen layout and overworld map editing are **out of scope** for the tile editor. They belong to the map/screen editor app (see below). Each supertile covers 8×10 characters (64×80 pixels) and is the building block that app places on playfields.
+Screen layout and overworld map editing are **out of scope** for the tile editor. They belong to the map/screen editor app (see below). Each supertile covers 8×8 characters (64×64 pixels) and is the building block that app places on playfields.
 
 ## Repository layout (target)
 
@@ -229,7 +228,7 @@ Canonical color indices for pattern, color-table, and UI swatches. Define RGB tu
 |--------|----------------|-------|
 | **Tileset editor** | 8×8 grid + per-row fg/bg swatches | `tiles[i].pattern`, `tiles[i].colors[8]` |
 | **Metatile editor** | 16×16 composite preview + 2×2 cell picker | `metatiles[i].flags`, `metatiles[i].cells[4]` |
-| **Supertile editor** | 64×80 composite preview + 4×5 cell picker | `supertiles[i].cells[20]` |
+| **Supertile editor** | 64×64 composite preview + 4×4 cell picker | `supertiles[i].cells[16]` |
 
 On launch, open all three editor windows (and keep them open). Use a **Window** menu on each (or a small app coordinator) to raise/hide editors. Closing one editor must not exit the app unless it is the last window — prefer **File → Exit** to quit.
 
@@ -263,7 +262,7 @@ Implementation requirements:
 
 - **Tileset window:** palette (left), tile canvas + export (center), tile index + **Select Tile…** (sidebar)
 - **Metatile window:** metatile list + add/remove/rename (left), **flags/type controls**, 2×2 picker + composite + export (center)
-- **Supertile window:** supertile list + add/remove/rename (left), 4×5 picker + composite + export (center)
+- **Supertile window:** supertile list + add/remove/rename (left), 4×4 picker + composite + export (center)
 - **Shared:** status bar per window showing that editor's active slot; **File** menu (New/Load/Save/Exit) on each window or one coordinator — must not desync project state
 - **No Mode menu** — replaced by **Window** menu (focus Tileset / Metatile / Supertile)
 
@@ -427,9 +426,9 @@ Build **one phase at a time**. After each phase, stop and report completion befo
 
 - Open **supertile editor** alongside the other two editors; `SUPERTILE_WINDOW_BG` tint
 - Tile edits cascade through metatiles into supertiles; metatile edits cascade into supertiles
-- 4×5 picker over metatile previews; click cell to assign metatile index via **metatile picker**
+- 4×4 picker over metatile previews; click cell to assign metatile index via **metatile picker**
 - Supertile list with add/remove/rename (max 256)
-- Live 64×80 composite preview
+- Live 64×64 composite preview
 
 ### Phase 6: Project I/O + export
 
@@ -471,7 +470,7 @@ Both windows open simultaneously (same pattern as the tile editor). They read gr
 
 ### Map data shapes (initial — refine when scoped)
 
-**Screen** — supertile grid for one playfield (dimensions TBD; supertile = 64×80 px):
+**Screen** — supertile grid for one playfield (dimensions TBD; supertile = 64×64 px):
 
 ```asm
 SCREEN00
@@ -543,7 +542,7 @@ Versioned JSON project file:
   "supertiles": [
     {
       "name": "ST00",
-      "cells": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
+      "cells": [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0]
     }
   ]
 }
@@ -559,7 +558,7 @@ Versioned JSON project file:
 - `pattern`: 8×8 grid of bit values `0` or `1`
 - `colors`: **required** per tile — exactly 8 entries of `{fg, bg}` (one per scanline, top to bottom); each value 0–15
 - `flags`: metatile header byte (0–255 bitfield); default `0`
-- `cells`: indices into the parent level's table (metatile cells: 4; supertile cells: 20)
+- `cells`: indices into the parent level's table (metatile cells: 4; supertile cells: 16)
 - On load: pad missing `colors` to 8 rows with default `{fg: 15, bg: 1}`; coerce invalid pattern values to 0/1
 - Validate indices on load: metatile cells → tile 0–255; supertile cells → metatile 0..`len(metatiles)-1`
 
@@ -589,8 +588,8 @@ METAS
 SUPERS
     BYTE >03,>00,>00,>01
     BYTE >03,>04,>01,>02
-    ; ... 5 rows × 4 bytes per supertile ...
-    ; ... M supertiles × 20 bytes (M ≤ 256) ...
+    ; ... 4 rows × 4 bytes per supertile ...
+    ; ... M supertiles × 16 bytes (M ≤ 256) ...
 ```
 
 **Binary layout** for a full export:
@@ -600,7 +599,7 @@ SUPERS
 | Pattern table | 256 × 8 = 2048 bytes |
 | Color table | 256 × 8 = 2048 bytes |
 | Metatile table | N × 5 bytes (N = metatile count, max 256; 1 flags + 4 tiles each) |
-| Supertile table | M × 20 bytes (M = supertile count, max 256) |
+| Supertile table | M × 16 bytes (M = supertile count, max 256) |
 
 Label patterns (suggested defaults — adjust if user specifies otherwise):
 
@@ -643,7 +642,7 @@ Preserve unless the user explicitly changes product behavior:
 
 1. **Index integrity** — Metatile cells reference valid tile indices (0–255); supertile cells reference valid metatile indices (`0 .. metatile_count-1`). Clearing or overwriting a referenced tile, or deleting a referenced metatile, must warn.
 2. **Table sizes** — Tileset = exactly 256 slots; metatile set = 0–256; supertile set = 0–256. Block adds beyond 256.
-3. **Fixed geometry** — Base = 8×8; metatile = 2×2 tiles + 1 flags byte; supertile = 4×5. Do not parameterize without user request.
+3. **Fixed geometry** — Base = 8×8; metatile = 2×2 tiles + 1 flags byte; supertile = 4×4. Do not parameterize without user request.
 4. **Metatile flags** — Every metatile has exactly one `flags` byte in export (leading byte). JSON stores `flags` as integer 0–255; UI maps to named toggles per bit table above.
 5. **Row-major order** — All cell arrays index left-to-right, top-to-bottom.
 6. **Pattern encoding** — Bitplane only (0/1 per pixel); MSB-left per row, 8 bytes per tile — must match VDP layout.
@@ -684,7 +683,7 @@ Preserve unless the user explicitly changes product behavior:
 - Do not create markdown files the user did not ask for (except this file).
 - Do not skip running tests after substantive changes.
 - Do not break index references silently on delete — always warn.
-- Do not change the 256-tile / 256-metatile / 256-supertile limits or 2×2 / 4×5 geometry without user approval.
+- Do not change the 256-tile / 256-metatile / 256-supertile limits or 2×2 / 4×4 geometry without user approval.
 - Do not replace multi-window editors with a single mode-switching UI unless the user asks.
 - Do not let editor windows hold divergent copies of tile/metatile/supertile data.
 - Do not reference or depend on code, docs, or conventions from outside this repository in project files unless the user explicitly asks.

@@ -7,10 +7,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from project import ChangeEvent, Project
 from tile_model import (
     METATILE_FLAG_SOLID,
+    SUPERTILE_CELL_COUNT,
     TILE_COUNT,
     copy_tile,
     empty_tile,
     metatile_name_for_index,
+    supertile_name_for_index,
     tile_name_for_index,
 )
 
@@ -42,6 +44,16 @@ class TestProject(unittest.TestCase):
         self.assertEqual(project.get_active_tile()["pattern"][1][2], 1)
         self.assertEqual(len(events), 1)
         self.assertFalse(project.set_pixel(1, 2, 1))
+
+    def test_set_pixel_can_defer_notification(self):
+        project = Project()
+        events = []
+        project.add_listener(events.append)
+        self.assertTrue(project.set_pixel(0, 0, 1, notify=False))
+        self.assertEqual(len(events), 0)
+        project.notify_active_tile_changed()
+        self.assertEqual(len(events), 1)
+        self.assertEqual(events[0].kind, ChangeEvent.TILE_CHANGED)
 
     def test_set_row_color_updates_fg_or_bg(self):
         project = Project()
@@ -111,6 +123,46 @@ class TestProject(unittest.TestCase):
         project.add_listener(events.append)
         project.set_active_metatile_index(0)
         self.assertEqual(events[-1].kind, ChangeEvent.ACTIVE_METATILE_CHANGED)
+
+    def test_add_and_remove_supertile(self):
+        project = Project()
+        project.add_supertile()
+        self.assertEqual(len(project.supertiles), 1)
+        self.assertEqual(project.active_supertile_index, 0)
+        self.assertEqual(
+            project.get_active_supertile()["name"],
+            supertile_name_for_index(0),
+        )
+        project.add_supertile()
+        self.assertEqual(project.active_supertile_index, 1)
+        project.remove_supertile(0)
+        self.assertEqual(len(project.supertiles), 1)
+        self.assertEqual(project.active_supertile_index, 0)
+
+    def test_set_supertile_cell_and_rename(self):
+        project = Project()
+        project.add_supertile()
+        project.add_metatile()
+        project.set_supertile_cell(0, 3, 1)
+        self.assertEqual(project.get_supertile(0)["cells"][3], 1)
+        self.assertEqual(len(project.get_supertile(0)["cells"]), SUPERTILE_CELL_COUNT)
+        self.assertTrue(project.rename_supertile(0, "ROOM_A"))
+        self.assertEqual(project.get_supertile(0)["name"], "ROOM_A")
+
+    def test_set_active_supertile_index_notifies(self):
+        project = Project()
+        project.add_supertile()
+        project.add_supertile()
+        events = []
+        project.add_listener(events.append)
+        project.set_active_supertile_index(0)
+        self.assertEqual(events[-1].kind, ChangeEvent.ACTIVE_SUPERTILE_CHANGED)
+
+    def test_supertiles_referencing_metatile(self):
+        project = Project()
+        project.add_supertile()
+        project.set_supertile_cell(0, 0, 0)
+        self.assertEqual(project.supertiles_referencing_metatile(0), [0])
 
 
 if __name__ == "__main__":

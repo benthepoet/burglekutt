@@ -1,42 +1,42 @@
-"""Metatile editor window."""
+"""Supertile editor window."""
 
 import tkinter as tk
 from tkinter import messagebox, simpledialog, ttk
 
 import theme
-from composite import metatile_references_tile, resolve_metatile_pixels, resolve_tile_pixels
+from composite import (
+    metatile_references_tile,
+    resolve_metatile_pixels,
+    resolve_supertile_pixels,
+)
+from metatile_picker import PICKER_METATILE_SCALE_DEFAULT, MetatilePickerWindow
 from pixel_canvas import draw_pixel_grid
 from project import ChangeEvent
 from tile_model import (
-    METATILE_FLAG_DOOR,
-    METATILE_FLAG_HURT,
-    METATILE_FLAG_SOLID,
-    METATILE_FLAG_STAIRS,
-    METATILE_FLAG_WATER,
-    flags_has,
-    flags_summary,
+    METATILE_PIXEL_SIZE,
+    SUPERTILE_COLS,
+    SUPERTILE_PIXEL_HEIGHT,
+    SUPERTILE_PIXEL_WIDTH,
+    SUPERTILE_ROWS,
 )
-from tile_picker import PICKER_TILE_SCALE_DEFAULT, TilePickerWindow
 
-METATILE_PIXEL_SCALE_DEFAULT = 8
-METATILE_SIZE = 16
-CELL_THUMB_SCALE = PICKER_TILE_SCALE_DEFAULT
-CELL_THUMB_SIZE = 8 * CELL_THUMB_SCALE
+SUPERTILE_PIXEL_SCALE_DEFAULT = 2
+CELL_THUMB_SCALE = PICKER_METATILE_SCALE_DEFAULT
+CELL_THUMB_SIZE = METATILE_PIXEL_SIZE * CELL_THUMB_SCALE
 CELL_GAP = 4
 
 
-class MetatileEditorWindow:
+class SupertileEditorWindow:
     def __init__(self, root, project, coordinator=None):
         self.root = root
         self.project = project
         self.coordinator = coordinator
         self._assign_picker = None
-        self._flag_vars = {}
 
-        self.root.title("burglekutt — Metatile")
-        self.root.minsize(720, 420)
+        self.root.title("burglekutt — Supertile")
+        self.root.minsize(820, 480)
 
-        self._window_bg = theme.METATILE_WINDOW_BG
+        self._window_bg = theme.SUPERTILE_WINDOW_BG
         theme.apply_window_theme(self.root, self._window_bg)
 
         self._main_frame = tk.Frame(self.root, bg=self._window_bg)
@@ -52,8 +52,8 @@ class MetatileEditorWindow:
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.bind("<FocusIn>", self._on_focus)
 
-        self._refresh_metatile_list()
-        self._refresh_active_metatile()
+        self._refresh_supertile_list()
+        self._refresh_active_supertile()
 
     def _build_menus(self):
         menubar = tk.Menu(self.root)
@@ -82,7 +82,7 @@ class MetatileEditorWindow:
         theme.register_frame(content, self.root, self._window_bg)
         content.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
-        left = ttk.Labelframe(content, text="Metatiles", padding=8)
+        left = ttk.Labelframe(content, text="Supertiles", padding=8)
         left.pack(side=tk.LEFT, fill=tk.Y)
 
         list_frame = ttk.Frame(left)
@@ -91,54 +91,39 @@ class MetatileEditorWindow:
         list_scroll = ttk.Scrollbar(list_frame, orient=tk.VERTICAL)
         list_scroll.pack(side=tk.RIGHT, fill=tk.Y)
 
-        self._metatile_list = tk.Listbox(
+        self._supertile_list = tk.Listbox(
             list_frame,
             width=18,
             height=16,
             yscrollcommand=list_scroll.set,
         )
-        self._metatile_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
-        list_scroll.config(command=self._metatile_list.yview)
-        self._metatile_list.bind("<<ListboxSelect>>", self._on_list_select)
+        self._supertile_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        list_scroll.config(command=self._supertile_list.yview)
+        self._supertile_list.bind("<<ListboxSelect>>", self._on_list_select)
 
         buttons = ttk.Frame(left)
         buttons.pack(fill=tk.X, pady=(8, 0))
-        ttk.Button(buttons, text="Add", command=self._add_metatile).pack(
+        ttk.Button(buttons, text="Add", command=self._add_supertile).pack(
             side=tk.LEFT, padx=(0, 4)
         )
-        ttk.Button(buttons, text="Remove", command=self._remove_metatile).pack(
+        ttk.Button(buttons, text="Remove", command=self._remove_supertile).pack(
             side=tk.LEFT, padx=(0, 4)
         )
-        ttk.Button(buttons, text="Rename…", command=self._rename_metatile).pack(side=tk.LEFT)
-
-        flags_frame = ttk.Labelframe(left, text="Flags", padding=8)
-        flags_frame.pack(fill=tk.X, pady=(8, 0))
-        flag_defs = (
-            (METATILE_FLAG_SOLID, "Solid"),
-            (METATILE_FLAG_HURT, "Hurt"),
-            (METATILE_FLAG_WATER, "Water"),
-            (METATILE_FLAG_DOOR, "Door"),
-            (METATILE_FLAG_STAIRS, "Stairs"),
+        ttk.Button(buttons, text="Rename…", command=self._rename_supertile).pack(
+            side=tk.LEFT
         )
-        for mask, label in flag_defs:
-            var = tk.BooleanVar(value=False)
-            self._flag_vars[mask] = var
-            ttk.Checkbutton(
-                flags_frame,
-                text=label,
-                variable=var,
-                command=lambda m=mask: self._on_flag_toggle(m),
-            ).pack(anchor=tk.W)
 
         center = tk.Frame(content, bg=self._window_bg)
         theme.register_frame(center, self.root, self._window_bg)
         center.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=8)
 
-        composite_size = METATILE_SIZE * METATILE_PIXEL_SCALE_DEFAULT
+        composite_size = (
+            SUPERTILE_PIXEL_WIDTH * SUPERTILE_PIXEL_SCALE_DEFAULT
+        )
         self._composite_canvas = tk.Canvas(
             center,
             width=composite_size,
-            height=composite_size,
+            height=SUPERTILE_PIXEL_HEIGHT * SUPERTILE_PIXEL_SCALE_DEFAULT,
             bg=theme.CANVAS_BG,
             highlightthickness=0,
         )
@@ -151,12 +136,12 @@ class MetatileEditorWindow:
         theme.register_frame(self._cell_grid, self.root, self._window_bg)
         self._cell_grid.pack()
         self._cell_widgets = []
-        for row in range(2):
+        for row in range(SUPERTILE_ROWS):
             row_frame = tk.Frame(self._cell_grid, bg=self._window_bg)
             theme.register_frame(row_frame, self.root, self._window_bg)
             row_frame.pack()
-            for col in range(2):
-                cell_index = row * 2 + col
+            for col in range(SUPERTILE_COLS):
+                cell_index = row * SUPERTILE_COLS + col
                 cell = tk.Canvas(
                     row_frame,
                     width=CELL_THUMB_SIZE,
@@ -166,7 +151,12 @@ class MetatileEditorWindow:
                     highlightbackground=theme.CANVAS_GRID_OUTLINE,
                     cursor="hand2",
                 )
-                cell.grid(row=row, column=col, padx=CELL_GAP // 2, pady=CELL_GAP // 2)
+                cell.grid(
+                    row=row,
+                    column=col,
+                    padx=CELL_GAP // 2,
+                    pady=CELL_GAP // 2,
+                )
                 cell.bind(
                     "<ButtonRelease-1>",
                     lambda _event, index=cell_index: self._on_cell_click(index),
@@ -200,14 +190,12 @@ class MetatileEditorWindow:
     def _focus_metatile(self):
         if self.coordinator is not None:
             self.coordinator.open_or_focus_metatile()
-        else:
-            self.focus()
 
     def _focus_supertile(self):
         if self.coordinator is not None:
             self.coordinator.open_or_focus_supertile()
         else:
-            pass
+            self.focus()
 
     def _exit_app(self, _event=None):
         if self.coordinator is not None:
@@ -231,61 +219,49 @@ class MetatileEditorWindow:
             self.shutdown()
             self.root.destroy()
 
-    def _add_metatile(self):
+    def _add_supertile(self):
         try:
-            self.project.add_metatile()
+            self.project.add_supertile()
         except ValueError as exc:
-            messagebox.showerror("Add Metatile", str(exc), parent=self.root)
+            messagebox.showerror("Add Supertile", str(exc), parent=self.root)
 
-    def _remove_metatile(self):
-        if not self.project.metatiles:
+    def _remove_supertile(self):
+        if not self.project.supertiles:
             return
-        index = self.project.active_metatile_index
-        refs = self.project.supertiles_referencing_metatile(index)
-        if refs:
-            messagebox.showwarning(
-                "Remove Metatile",
-                "Supertile(s) still reference metatile {}.".format(index),
-                parent=self.root,
-            )
-            return
+        index = self.project.active_supertile_index
         if not messagebox.askyesno(
-            "Remove Metatile",
-            "Remove metatile {}?".format(index),
+            "Remove Supertile",
+            "Remove supertile {}?".format(index),
             parent=self.root,
         ):
             return
-        self.project.remove_metatile(index)
+        self.project.remove_supertile(index)
 
-    def _rename_metatile(self):
-        if not self.project.metatiles:
+    def _rename_supertile(self):
+        if not self.project.supertiles:
             return
-        metatile = self.project.get_active_metatile()
+        supertile = self.project.get_active_supertile()
         new_name = simpledialog.askstring(
-            "Rename Metatile",
-            "Metatile name:",
-            initialvalue=metatile["name"],
+            "Rename Supertile",
+            "Supertile name:",
+            initialvalue=supertile["name"],
             parent=self.root,
         )
         if new_name is None:
             return
         try:
-            self.project.rename_metatile(self.project.active_metatile_index, new_name)
+            self.project.rename_supertile(
+                self.project.active_supertile_index,
+                new_name,
+            )
         except ValueError as exc:
-            messagebox.showerror("Rename Metatile", str(exc), parent=self.root)
+            messagebox.showerror("Rename Supertile", str(exc), parent=self.root)
 
     def _on_list_select(self, _event=None):
-        selection = self._metatile_list.curselection()
+        selection = self._supertile_list.curselection()
         if not selection:
             return
-        self.project.set_active_metatile_index(selection[0])
-
-    def _on_flag_toggle(self, mask):
-        if not self.project.metatiles:
-            return
-        index = self.project.active_metatile_index
-        enabled = self._flag_vars[mask].get()
-        self.project.set_metatile_flag(index, mask, enabled)
+        self.project.set_active_supertile_index(selection[0])
 
     def _close_assign_picker(self):
         if self._assign_picker is not None:
@@ -293,24 +269,31 @@ class MetatileEditorWindow:
             self._assign_picker = None
 
     def _on_cell_click(self, cell_index):
+        if not self.project.supertiles:
+            return
         if not self.project.metatiles:
+            messagebox.showinfo(
+                "Assign Metatile",
+                "Add at least one metatile first.",
+                parent=self.root,
+            )
             return
         if self._assign_picker is not None:
             self._assign_picker.focus()
             return
 
-        meta_index = self.project.active_metatile_index
+        super_index = self.project.active_supertile_index
 
-        def on_tile_selected(tile_index):
+        def on_metatile_selected(metatile_index):
             self._assign_picker = None
-            self.project.set_metatile_cell(meta_index, cell_index, tile_index)
+            self.project.set_supertile_cell(super_index, cell_index, metatile_index)
 
-        self._assign_picker = TilePickerWindow(
+        self._assign_picker = MetatilePickerWindow(
             self.root,
             self.project,
             mode="assign",
-            title="Select Tile for Cell",
-            on_select=on_tile_selected,
+            title="Select Metatile for Cell",
+            on_select=on_metatile_selected,
             on_close=self._on_assign_picker_closed,
         )
         self._assign_picker.focus()
@@ -318,60 +301,53 @@ class MetatileEditorWindow:
     def _on_assign_picker_closed(self):
         self._assign_picker = None
 
-    def _refresh_metatile_list(self):
-        self._metatile_list.delete(0, tk.END)
-        for index, metatile in enumerate(self.project.metatiles):
-            summary = flags_summary(metatile["flags"])
-            suffix = " [{}]".format(summary) if summary else ""
-            self._metatile_list.insert(tk.END, "{}{}".format(metatile["name"], suffix))
-        if self.project.metatiles:
-            index = self.project.active_metatile_index
-            self._metatile_list.selection_clear(0, tk.END)
-            self._metatile_list.selection_set(index)
-            self._metatile_list.activate(index)
-            self._metatile_list.see(index)
+    def _refresh_supertile_list(self):
+        self._supertile_list.delete(0, tk.END)
+        for supertile in self.project.supertiles:
+            self._supertile_list.insert(tk.END, supertile["name"])
+        if self.project.supertiles:
+            index = self.project.active_supertile_index
+            self._supertile_list.selection_clear(0, tk.END)
+            self._supertile_list.selection_set(index)
+            self._supertile_list.activate(index)
+            self._supertile_list.see(index)
 
-    def _refresh_flags(self):
-        if not self.project.metatiles:
-            for var in self._flag_vars.values():
-                var.set(False)
-            return
-        flags = self.project.get_active_metatile()["flags"]
-        for mask, var in self._flag_vars.items():
-            var.set(flags_has(flags, mask))
-
-    def _draw_tile_thumbnail(self, canvas, tile):
-        pixels = resolve_tile_pixels(tile)
+    def _draw_metatile_thumbnail(self, canvas, metatile):
+        pixels = resolve_metatile_pixels(metatile, self.project.tiles)
         draw_pixel_grid(canvas, pixels, CELL_THUMB_SCALE)
 
     def _refresh_cells(self):
-        if not self.project.metatiles:
+        if not self.project.supertiles:
             for canvas in self._cell_widgets:
                 canvas.delete("all")
             return
-        metatile = self.project.get_active_metatile()
+        supertile = self.project.get_active_supertile()
         for cell_index, canvas in enumerate(self._cell_widgets):
-            tile = self.project.get_tile(metatile["cells"][cell_index])
-            self._draw_tile_thumbnail(canvas, tile)
+            metatile = self.project.get_metatile(supertile["cells"][cell_index])
+            self._draw_metatile_thumbnail(canvas, metatile)
 
     def _refresh_composite(self):
-        if not self.project.metatiles:
+        if not self.project.supertiles:
             self._composite_canvas.delete("all")
             return
-        metatile = self.project.get_active_metatile()
-        pixels = resolve_metatile_pixels(metatile, self.project.tiles)
-        scale = METATILE_PIXEL_SCALE_DEFAULT
+        supertile = self.project.get_active_supertile()
+        pixels = resolve_supertile_pixels(
+            supertile,
+            self.project.metatiles,
+            self.project.tiles,
+        )
+        scale = SUPERTILE_PIXEL_SCALE_DEFAULT
         draw_pixel_grid(self._composite_canvas, pixels, scale)
-        for i in range(3):
-            pos = i * 8 * scale
-            size = METATILE_SIZE * scale
+        for i in range(SUPERTILE_COLS + 1):
+            pos = i * METATILE_PIXEL_SIZE * scale
+            size = SUPERTILE_PIXEL_WIDTH * scale
             self._composite_canvas.create_line(
                 pos, 0, pos, size - 1, fill=theme.CANVAS_GRID_OUTLINE
             )
             self._composite_canvas.create_line(
                 0, pos, size - 1, pos, fill=theme.CANVAS_GRID_OUTLINE
             )
-        size = METATILE_SIZE * scale
+        size = SUPERTILE_PIXEL_WIDTH * scale
         self._composite_canvas.create_line(
             size - 1, 0, size - 1, size - 1, fill=theme.CANVAS_GRID_OUTLINE
         )
@@ -379,41 +355,63 @@ class MetatileEditorWindow:
             0, size - 1, size - 1, size - 1, fill=theme.CANVAS_GRID_OUTLINE
         )
 
-    def _refresh_active_metatile(self):
-        self._refresh_flags()
+    def _refresh_active_supertile(self):
         self._refresh_cells()
         self._refresh_composite()
         self._update_status()
 
     def _update_status(self):
-        if not self.project.metatiles:
-            self._status_label.config(text="No metatiles")
+        if not self.project.supertiles:
+            self._status_label.config(text="No supertiles")
             return
-        metatile = self.project.get_active_metatile()
-        index = self.project.active_metatile_index
-        summary = flags_summary(metatile["flags"])
-        parts = ["Metatile {} / {}".format(index, metatile["name"])]
-        if summary:
-            parts.append("Flags {}".format(summary))
-        self._status_label.config(text="  |  ".join(parts))
+        supertile = self.project.get_active_supertile()
+        index = self.project.active_supertile_index
+        self._status_label.config(
+            text="Supertile {} / {}".format(index, supertile["name"])
+        )
+
+    def _active_supertile_references_metatile(self, metatile_index):
+        if not self.project.supertiles:
+            return False
+        supertile = self.project.get_active_supertile()
+        return metatile_index in supertile["cells"]
+
+    def _active_supertile_references_tile(self, tile_index):
+        if not self.project.supertiles:
+            return False
+        supertile = self.project.get_active_supertile()
+        for meta_index in set(supertile["cells"]):
+            if metatile_references_tile(
+                self.project.metatiles[meta_index],
+                tile_index,
+            ):
+                return True
+        return False
 
     def _on_project_change(self, event):
         if event.kind == ChangeEvent.TILE_CHANGED:
             if (
-                self.project.metatiles
-                and metatile_references_tile(
-                    self.project.get_active_metatile(),
-                    event.index,
-                )
+                self.project.supertiles
+                and self._active_supertile_references_tile(event.index)
             ):
                 self._refresh_cells()
                 self._refresh_composite()
         elif event.kind == ChangeEvent.METATILE_CHANGED:
-            self._refresh_metatile_list()
-            if event.index == self.project.active_metatile_index:
-                self._refresh_active_metatile()
+            if (
+                self.project.supertiles
+                and self._active_supertile_references_metatile(event.index)
+            ):
+                self._refresh_cells()
+                self._refresh_composite()
+        elif event.kind == ChangeEvent.SUPERTILE_CHANGED:
+            self._refresh_supertile_list()
+            if (
+                self.project.supertiles
+                and event.index == self.project.active_supertile_index
+            ):
+                self._refresh_active_supertile()
             else:
                 self._update_status()
-        elif event.kind == ChangeEvent.ACTIVE_METATILE_CHANGED:
-            self._refresh_metatile_list()
-            self._refresh_active_metatile()
+        elif event.kind == ChangeEvent.ACTIVE_SUPERTILE_CHANGED:
+            self._refresh_supertile_list()
+            self._refresh_active_supertile()

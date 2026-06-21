@@ -3,6 +3,7 @@
 import tkinter as tk
 
 from composite import resolve_tile_pixels
+from pixel_canvas import photoimage_from_pixels
 from project import ChangeEvent
 import theme
 
@@ -103,43 +104,69 @@ class TilePickerWindow:
 
     def refresh(self):
         self.canvas.delete("all")
+        self.canvas._thumb_photos = []
         cell = cell_pixel_size(self.scale)
         stride = cell + PICKER_CELL_GAP
 
         for index in range(PICKER_ROWS * PICKER_COLUMNS):
-            row, col = index_to_grid_pos(index)
-            x0 = col * stride
-            y0 = row * stride
-            x1 = x0 + cell
-            y1 = y0 + cell
+            self._draw_tile_cell(index, cell, stride)
 
-            tile = self.project.get_tile(index)
-            pixels = resolve_tile_pixels(tile)
-            pixel_scale = self.scale
-            for prow in range(8):
-                for pcol in range(8):
-                    px0 = x0 + pcol * pixel_scale
-                    py0 = y0 + prow * pixel_scale
-                    px1 = px0 + pixel_scale
-                    py1 = py0 + pixel_scale
-                    self.canvas.create_rectangle(
-                        px0,
-                        py0,
-                        px1,
-                        py1,
-                        fill=pixels[prow][pcol],
-                        outline="",
-                    )
+    def _draw_tile_cell(self, index, cell=None, stride=None):
+        if cell is None:
+            cell = cell_pixel_size(self.scale)
+        if stride is None:
+            stride = cell + PICKER_CELL_GAP
+        row, col = index_to_grid_pos(index)
+        x0 = col * stride
+        y0 = row * stride
+        x1 = x0 + cell
+        y1 = y0 + cell
 
-            if index == self.project.active_tile_index and self.mode == "edit":
-                self.canvas.create_rectangle(
-                    x0 - 1,
-                    y0 - 1,
-                    x1 + 1,
-                    y1 + 1,
-                    outline=theme.ACCENT_BORDER,
-                    width=3,
-                )
+        tile = self.project.get_tile(index)
+        pixels = resolve_tile_pixels(tile)
+        thumb = photoimage_from_pixels(pixels, self.scale)
+        self.canvas.create_image(x0, y0, anchor=tk.NW, image=thumb)
+        if not hasattr(self.canvas, "_thumb_photos"):
+            self.canvas._thumb_photos = []
+        self.canvas._thumb_photos.append(thumb)
+
+        if index == self.project.active_tile_index and self.mode == "edit":
+            self.canvas.create_rectangle(
+                x0 - 1,
+                y0 - 1,
+                x1 + 1,
+                y1 + 1,
+                outline=theme.ACCENT_BORDER,
+                width=3,
+            )
+
+    def _refresh_tile_cell(self, index):
+        cell = cell_pixel_size(self.scale)
+        stride = cell + PICKER_CELL_GAP
+        row, col = index_to_grid_pos(index)
+        x0 = col * stride
+        y0 = row * stride
+        x1 = x0 + cell
+        y1 = y0 + cell
+        tag = "tile_{}".format(index)
+        self.canvas.delete(tag)
+        tile = self.project.get_tile(index)
+        pixels = resolve_tile_pixels(tile)
+        thumb = photoimage_from_pixels(pixels, self.scale)
+        self.canvas.create_image(x0, y0, anchor=tk.NW, image=thumb, tags=(tag,))
+        if not hasattr(self.canvas, "_thumb_photos"):
+            self.canvas._thumb_photos = []
+        self.canvas._thumb_photos.append(thumb)
+        if index == self.project.active_tile_index and self.mode == "edit":
+            self.canvas.create_rectangle(
+                x0 - 1,
+                y0 - 1,
+                x1 + 1,
+                y1 + 1,
+                outline=theme.ACCENT_BORDER,
+                width=3,
+                tags=(tag,),
+            )
 
     def _index_at(self, x, y):
         cell = cell_pixel_size(self.scale)
@@ -183,7 +210,10 @@ class TilePickerWindow:
         self._status_label.config(text="Tile {} / {}".format(index, tile["name"]))
 
     def _on_project_change(self, event):
-        if event.kind in (ChangeEvent.TILE_CHANGED, ChangeEvent.ACTIVE_TILE_CHANGED):
+        if event.kind == ChangeEvent.TILE_CHANGED:
+            self._refresh_tile_cell(event.index)
+            self._update_status()
+        elif event.kind == ChangeEvent.ACTIVE_TILE_CHANGED:
             self.refresh()
             self._update_status()
 

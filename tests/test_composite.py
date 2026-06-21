@@ -8,11 +8,21 @@ from composite import (
     metatile_references_tile,
     metatiles_referencing_tile,
     resolve_metatile_pixels,
+    resolve_supertile_pixels,
     resolve_tile_pixels,
+    supertile_references_metatile,
+    supertiles_referencing_metatile,
     tile_is_empty,
 )
 from palette import rgb_to_hex
-from tile_model import TILE_SIZE, empty_metatile, empty_tile
+from tile_model import (
+    SUPERTILE_PIXEL_HEIGHT,
+    SUPERTILE_PIXEL_WIDTH,
+    TILE_SIZE,
+    empty_metatile,
+    empty_supertile,
+    empty_tile,
+)
 
 
 class TestComposite(unittest.TestCase):
@@ -58,6 +68,30 @@ class TestComposite(unittest.TestCase):
         metatiles[1]["cells"] = [5, 1, 0, 0]
         self.assertTrue(metatile_references_tile(metatiles[0], 2))
         self.assertEqual(metatiles_referencing_tile(metatiles, 1), [0, 1])
+
+    def test_resolve_supertile_pixels(self):
+        tiles = [empty_tile() for _ in range(5)]
+        tiles[0]["pattern"][0][0] = 1
+        tiles[0]["colors"][0] = {"fg": 7, "bg": 1}
+        tiles[4]["pattern"][7][7] = 1
+        tiles[4]["colors"][7] = {"fg": 4, "bg": 1}
+        metatiles = [empty_metatile() for _ in range(5)]
+        metatiles[0]["cells"] = [0, 1, 2, 3]
+        metatiles[4]["cells"] = [4, 4, 4, 4]
+        supertile = empty_supertile()
+        supertile["cells"] = [0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 3, 0, 1, 2, 4]
+        pixels = resolve_supertile_pixels(supertile, metatiles, tiles)
+        self.assertEqual(len(pixels), SUPERTILE_PIXEL_HEIGHT)
+        self.assertEqual(len(pixels[0]), SUPERTILE_PIXEL_WIDTH)
+        self.assertEqual(pixels[0][0], rgb_to_hex(7))
+        self.assertEqual(pixels[63][63], rgb_to_hex(4))
+
+    def test_supertiles_referencing_metatile(self):
+        supertiles = [empty_supertile(), empty_supertile()]
+        supertiles[0]["cells"][0] = 2
+        supertiles[1]["cells"][15] = 2
+        self.assertTrue(supertile_references_metatile(supertiles[0], 2))
+        self.assertEqual(supertiles_referencing_metatile(supertiles, 2), [0, 1])
 
 
 if __name__ == "__main__":

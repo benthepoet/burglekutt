@@ -23,6 +23,8 @@ class TilesetEditorWindow:
         self._palette_popup = None
         self._tile_picker = None
         self._assign_picker = None
+        self._stroke_dirty = False
+        self._skip_tile_refresh = False
 
         self.root.title("burglekutt — Tileset")
         min_canvas = 8 * TILE_PIXEL_SCALE_MIN
@@ -78,10 +80,7 @@ class TilesetEditorWindow:
         window_menu.add_command(label="Tileset", command=self.focus)
         window_menu.add_command(label="Tile Picker", command=self._open_tile_picker)
         window_menu.add_command(label="Metatile", command=self._focus_metatile)
-        window_menu.add_command(
-            label="Supertile (Phase 5)",
-            state=tk.DISABLED,
-        )
+        window_menu.add_command(label="Supertile", command=self._focus_supertile)
 
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
@@ -105,6 +104,7 @@ class TilesetEditorWindow:
         self.tile_canvas.pack()
         self.tile_canvas.on_swatch_select(self._on_swatch_select)
         self.tile_canvas.on_pixel_change(self._on_pixel_change)
+        self.tile_canvas.on_stroke_end(self._on_stroke_end)
 
         sidebar = ttk.Labelframe(content, text="Tile", padding=8)
         sidebar.pack(side=tk.LEFT, fill=tk.Y, padx=(8, 0))
@@ -204,8 +204,17 @@ class TilesetEditorWindow:
     def _on_pixel_change(self, row, col, bit, is_stroke_start):
         if is_stroke_start:
             self._push_undo_snapshot()
-        self.project.set_pixel(row, col, bit)
+            self._stroke_dirty = False
+        if self.project.set_pixel(row, col, bit, notify=False):
+            self._stroke_dirty = True
+            self.tile_canvas.update_pixel(row, col)
         self._update_edit_menu_state()
+
+    def _on_stroke_end(self, _event=None):
+        if self._stroke_dirty:
+            self._skip_tile_refresh = True
+            self.project.notify_active_tile_changed()
+            self._stroke_dirty = False
 
     def _close_palette_popup(self):
         if self._palette_popup is not None:
@@ -298,7 +307,10 @@ class TilesetEditorWindow:
             self._update_edit_menu_state()
         elif event.kind == ChangeEvent.TILE_CHANGED:
             if event.index == self.project.active_tile_index:
-                self.tile_canvas.refresh()
+                if self._skip_tile_refresh:
+                    self._skip_tile_refresh = False
+                else:
+                    self.tile_canvas.refresh()
                 if self._color_target_row is not None and self._color_target_channel is not None:
                     self.tile_canvas.set_active_target(
                         self._color_target_row,
@@ -329,6 +341,10 @@ class TilesetEditorWindow:
         if self.coordinator is not None:
             self.coordinator.focus_metatile()
 
+    def _focus_supertile(self):
+        if self.coordinator is not None:
+            self.coordinator.focus_supertile()
+
     def _exit_app(self, _event=None):
         if self.coordinator is not None:
             self.coordinator.exit_all()
@@ -341,7 +357,7 @@ class TilesetEditorWindow:
     def _show_about(self, event=None):
         messagebox.showinfo(
             "About burglekutt",
-            "burglekutt — TI-99 tile editor\nPhase 4: metatile editor",
+            "burglekutt — TI-99 tile editor\nPhase 5: supertile editor",
         )
 
     def _on_close(self, event=None):

@@ -11,7 +11,16 @@ MAX_TILE_NAME_LEN = 32
 
 METATILE_COUNT = 256
 METATILE_CELL_COUNT = 4
+METATILE_PIXEL_SIZE = 16
 DEFAULT_METATILE_NAME = "MT00"
+
+SUPERTILE_COUNT = 256
+SUPERTILE_COLS = 4
+SUPERTILE_ROWS = 4
+SUPERTILE_CELL_COUNT = SUPERTILE_COLS * SUPERTILE_ROWS
+SUPERTILE_PIXEL_WIDTH = SUPERTILE_COLS * METATILE_PIXEL_SIZE
+SUPERTILE_PIXEL_HEIGHT = SUPERTILE_ROWS * METATILE_PIXEL_SIZE
+DEFAULT_SUPERTILE_NAME = "ST00"
 
 METATILE_FLAG_SOLID = 0x01
 METATILE_FLAG_HURT = 0x02
@@ -123,3 +132,35 @@ def flags_summary(flags):
     """Return a compact label for enabled metatile flags."""
     labels = [label for mask, label in METATILE_FLAGS if flags_has(flags, mask)]
     return "".join(labels)
+
+
+def empty_supertile(name=DEFAULT_SUPERTILE_NAME):
+    """Return a new empty supertile dict."""
+    return {
+        "name": name,
+        "cells": [0] * SUPERTILE_CELL_COUNT,
+    }
+
+
+def copy_supertile(supertile):
+    """Return a deep copy of a supertile dict."""
+    return copy.deepcopy(supertile)
+
+
+def supertile_name_for_index(index):
+    """Return the default supertile name for a slot index (ST00..STFF)."""
+    if index < 0 or index >= SUPERTILE_COUNT:
+        raise ValueError("supertile index out of range")
+    return "ST{:02X}".format(index)
+
+
+def validate_supertile_name(name):
+    """Return a stripped supertile name or raise ValueError."""
+    if not isinstance(name, str):
+        raise ValueError("supertile name must be a string")
+    name = name.strip()
+    if not name:
+        raise ValueError("supertile name must not be empty")
+    if len(name) > MAX_TILE_NAME_LEN:
+        raise ValueError("supertile name is too long")
+    return name

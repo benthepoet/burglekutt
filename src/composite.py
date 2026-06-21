@@ -1,7 +1,13 @@
 """Resolve tile pixels for thumbnails and composite previews."""
 
 from palette import resolve_pixel_color
-from tile_model import TILE_SIZE
+from tile_model import (
+    METATILE_PIXEL_SIZE,
+    SUPERTILE_COLS,
+    SUPERTILE_PIXEL_HEIGHT,
+    SUPERTILE_PIXEL_WIDTH,
+    TILE_SIZE,
+)
 
 
 def resolve_tile_pixels(tile):
@@ -46,4 +52,39 @@ def metatiles_referencing_tile(metatiles, tile_index):
         index
         for index, metatile in enumerate(metatiles)
         if metatile_references_tile(metatile, tile_index)
+    ]
+
+
+def resolve_supertile_pixels(supertile, metatiles, tiles):
+    """Return a 64x64 grid of hex colors from a 4x4 supertile."""
+    meta_cache = {}
+    pixels = []
+    for row in range(SUPERTILE_PIXEL_HEIGHT):
+        super_row = row // METATILE_PIXEL_SIZE
+        meta_row = row % METATILE_PIXEL_SIZE
+        row_pixels = []
+        for col in range(SUPERTILE_PIXEL_WIDTH):
+            super_col = col // METATILE_PIXEL_SIZE
+            meta_col = col % METATILE_PIXEL_SIZE
+            cell_index = super_row * SUPERTILE_COLS + super_col
+            meta_index = supertile["cells"][cell_index]
+            if meta_index not in meta_cache:
+                meta_cache[meta_index] = resolve_metatile_pixels(
+                    metatiles[meta_index],
+                    tiles,
+                )
+            row_pixels.append(meta_cache[meta_index][meta_row][meta_col])
+        pixels.append(row_pixels)
+    return pixels
+
+
+def supertile_references_metatile(supertile, metatile_index):
+    return metatile_index in supertile["cells"]
+
+
+def supertiles_referencing_metatile(supertiles, metatile_index):
+    return [
+        index
+        for index, supertile in enumerate(supertiles)
+        if supertile_references_metatile(supertile, metatile_index)
     ]

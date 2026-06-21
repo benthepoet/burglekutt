@@ -71,6 +71,8 @@ class TileCanvas(tk.Frame):
         self._stroke_active = False
         self._suppress_stroke = False
         self._swatch_widgets = []
+        self._pixel_rects = [[None] * TILE_SIZE for _ in range(TILE_SIZE)]
+        self._stroke_end_callbacks = []
 
         self._body = tk.Frame(self, bg=self._window_bg)
         theme.register_frame(self._body, self._root, self._window_bg)
@@ -161,6 +163,9 @@ class TileCanvas(tk.Frame):
     def on_pixel_change(self, callback):
         self._pixel_change_callbacks.append(callback)
 
+    def on_stroke_end(self, callback):
+        self._stroke_end_callbacks.append(callback)
+
     def set_active_target(self, row, channel):
         self._active_row = row
         self._active_channel = channel
@@ -169,6 +174,15 @@ class TileCanvas(tk.Frame):
         """Ignore the next pattern-canvas click (e.g. after palette popup closes)."""
         self._suppress_stroke = True
         self._stroke_active = False
+
+    def update_pixel(self, row, col):
+        """Redraw a single pattern pixel after a local data change."""
+        rect_id = self._pixel_rects[row][col]
+        if rect_id is None:
+            return
+        tile = self.project.get_active_tile()
+        fill = resolve_pixel_color(tile, row, col)
+        self.canvas.itemconfig(rect_id, fill=fill)
 
     def refresh(self):
         tile = self.project.get_active_tile()
@@ -184,7 +198,10 @@ class TileCanvas(tk.Frame):
                 x1 = x0 + scale
                 y1 = y0 + scale
                 fill = resolve_pixel_color(tile, row, col)
-                canvas.create_rectangle(x0, y0, x1, y1, fill=fill, outline="")
+                rect_id = canvas.create_rectangle(
+                    x0, y0, x1, y1, fill=fill, outline=""
+                )
+                self._pixel_rects[row][col] = rect_id
 
         for i in range(TILE_SIZE + 1):
             pos = i * scale
@@ -223,6 +240,9 @@ class TileCanvas(tk.Frame):
         self._stroke_active = True
 
     def _on_stroke_end(self, _event=None):
+        if self._stroke_active:
+            for callback in self._stroke_end_callbacks:
+                callback()
         self._stroke_active = False
 
     def _on_swatch_click(self, row, channel, event):

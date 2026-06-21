@@ -8,6 +8,9 @@ from tile_model import (
     DEFAULT_TILE_NAME,
     METATILE_FLAG_HURT,
     METATILE_FLAG_SOLID,
+    SUPERTILE_CELL_COUNT,
+    SUPERTILE_PIXEL_HEIGHT,
+    SUPERTILE_PIXEL_WIDTH,
     TILE_COUNT,
     TILE_SIZE,
     copy_tile,
@@ -15,11 +18,13 @@ from tile_model import (
     default_tileset,
     empty_metatile,
     empty_pattern,
+    empty_supertile,
     empty_tile,
     flags_has,
     flags_set,
     flags_summary,
     metatile_name_for_index,
+    supertile_name_for_index,
     tile_name_for_index,
     validate_tile_name,
 )
@@ -84,6 +89,21 @@ class TestTileModel(unittest.TestCase):
         flags = flags_set(flags, METATILE_FLAG_HURT, True)
         self.assertTrue(flags_has(flags, METATILE_FLAG_SOLID))
         self.assertEqual(flags_summary(flags), "SH")
+
+    def test_empty_supertile_defaults(self):
+        supertile = empty_supertile()
+        self.assertEqual(supertile["name"], "ST00")
+        self.assertEqual(len(supertile["cells"]), SUPERTILE_CELL_COUNT)
+        self.assertEqual(supertile["cells"], [0] * SUPERTILE_CELL_COUNT)
+
+    def test_supertile_geometry_constants(self):
+        self.assertEqual(SUPERTILE_CELL_COUNT, 16)
+        self.assertEqual(SUPERTILE_PIXEL_WIDTH, 64)
+        self.assertEqual(SUPERTILE_PIXEL_HEIGHT, 64)
+
+    def test_supertile_name_for_index(self):
+        self.assertEqual(supertile_name_for_index(0), "ST00")
+        self.assertEqual(supertile_name_for_index(255), "STFF")
 
 
 if __name__ == "__main__":

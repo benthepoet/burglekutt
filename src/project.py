@@ -2,6 +2,7 @@
 
 from tile_model import (
     METATILE_COUNT,
+    SUPERTILE_COUNT,
     TILE_COUNT,
     copy_metatile,
     copy_tile,
@@ -9,11 +10,14 @@ from tile_model import (
     default_tileset,
     empty_metatile,
     empty_pattern,
+    empty_supertile,
     empty_tile,
     flags_set,
     metatile_name_for_index,
+    supertile_name_for_index,
     tile_name_for_index,
     validate_metatile_name,
+    validate_supertile_name,
     validate_tile_name,
 )
 
@@ -23,6 +27,8 @@ class ChangeEvent:
     ACTIVE_TILE_CHANGED = "active_tile_changed"
     METATILE_CHANGED = "metatile_changed"
     ACTIVE_METATILE_CHANGED = "active_metatile_changed"
+    SUPERTILE_CHANGED = "supertile_changed"
+    ACTIVE_SUPERTILE_CHANGED = "active_supertile_changed"
 
     def __init__(self, kind, index=0):
         self.kind = kind
@@ -36,6 +42,7 @@ class Project:
         self.metatiles = [empty_metatile(metatile_name_for_index(0))]
         self.active_metatile_index = 0
         self.supertiles = []
+        self.active_supertile_index = 0
         self._listeners = []
 
     def get_tile(self, index):
@@ -55,6 +62,16 @@ class Project:
         if not self.metatiles:
             raise IndexError("no metatiles defined")
         return self.metatiles[self.active_metatile_index]
+
+    def get_supertile(self, index):
+        if index < 0 or index >= len(self.supertiles):
+            raise IndexError("supertile index out of range")
+        return self.supertiles[index]
+
+    def get_active_supertile(self):
+        if not self.supertiles:
+            raise IndexError("no supertiles defined")
+        return self.supertiles[self.active_supertile_index]
 
     def add_listener(self, callback):
         self._listeners.append(callback)
@@ -113,6 +130,42 @@ class Project:
                 )
             )
 
+    def set_active_supertile_index(self, index):
+        if index < 0 or index >= len(self.supertiles):
+            raise IndexError("supertile index out of range")
+        if index == self.active_supertile_index:
+            return False
+        self.active_supertile_index = index
+        self.notify(ChangeEvent(ChangeEvent.ACTIVE_SUPERTILE_CHANGED, index))
+        return True
+
+    def add_supertile(self):
+        if len(self.supertiles) >= SUPERTILE_COUNT:
+            raise ValueError("supertile limit reached")
+        index = len(self.supertiles)
+        self.supertiles.append(empty_supertile(supertile_name_for_index(index)))
+        self.active_supertile_index = index
+        self.notify(ChangeEvent(ChangeEvent.SUPERTILE_CHANGED, index))
+
+    def remove_supertile(self, index):
+        if index < 0 or index >= len(self.supertiles):
+            raise IndexError("supertile index out of range")
+        del self.supertiles[index]
+        if not self.supertiles:
+            self.active_supertile_index = 0
+        elif self.active_supertile_index >= len(self.supertiles):
+            self.active_supertile_index = len(self.supertiles) - 1
+        elif index < self.active_supertile_index:
+            self.active_supertile_index -= 1
+        self.notify(ChangeEvent(ChangeEvent.SUPERTILE_CHANGED, index))
+        if self.supertiles:
+            self.notify(
+                ChangeEvent(
+                    ChangeEvent.ACTIVE_SUPERTILE_CHANGED,
+                    self.active_supertile_index,
+                )
+            )
+
     def supertiles_referencing_metatile(self, metatile_index):
         refs = []
         for super_index, supertile in enumerate(self.supertiles):
@@ -148,6 +201,15 @@ class Project:
         self.notify(ChangeEvent(ChangeEvent.METATILE_CHANGED, index))
         return True
 
+    def rename_supertile(self, index, name):
+        validated = validate_supertile_name(name)
+        supertile = self.get_supertile(index)
+        if supertile["name"] == validated:
+            return False
+        supertile["name"] = validated
+        self.notify(ChangeEvent(ChangeEvent.SUPERTILE_CHANGED, index))
+        return True
+
     def set_metatile_cell(self, meta_index, cell_index, tile_index):
         if tile_index < 0 or tile_index >= TILE_COUNT:
             raise IndexError("tile index out of range")
@@ -167,13 +229,28 @@ class Project:
         self.notify(ChangeEvent(ChangeEvent.METATILE_CHANGED, meta_index))
         return True
 
-    def set_pixel(self, row, col, bit):
+    def set_supertile_cell(self, super_index, cell_index, metatile_index):
+        if metatile_index < 0 or metatile_index >= len(self.metatiles):
+            raise IndexError("metatile index out of range")
+        supertile = self.get_supertile(super_index)
+        if supertile["cells"][cell_index] == metatile_index:
+            return False
+        supertile["cells"][cell_index] = metatile_index
+        self.notify(ChangeEvent(ChangeEvent.SUPERTILE_CHANGED, super_index))
+        return True
+
+    def set_pixel(self, row, col, bit, notify=True):
         tile = self.get_active_tile()
         if tile["pattern"][row][col] == bit:
             return False
         tile["pattern"][row][col] = bit
-        self.notify(ChangeEvent(ChangeEvent.TILE_CHANGED, self.active_tile_index))
+        if notify:
+            self.notify(ChangeEvent(ChangeEvent.TILE_CHANGED, self.active_tile_index))
         return True
+
+    def notify_active_tile_changed(self):
+        """Emit TILE_CHANGED for the active tile without mutating data."""
+        self.notify(ChangeEvent(ChangeEvent.TILE_CHANGED, self.active_tile_index))
 
     def set_row_color(self, row, fg=None, bg=None):
         tile = self.get_active_tile()
