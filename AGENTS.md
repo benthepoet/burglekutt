@@ -326,7 +326,7 @@ A separate window for choosing which of the 256 tileset slots to edit.
 - **Layout:** 16 columns × 16 rows = 256 cells, index **row-major** (0 top-left → 255 bottom-right).
 - **Cell content:** scaled thumbnail of the tile (resolved pattern + per-line colors); empty slots show a neutral placeholder.
 - **Selection:** click a cell to make it the active edit slot; close or keep the window open (user preference — default: stay open, non-modal `Toplevel`).
-- **Highlight:** clearly mark the currently active slot; optional hover shows index/name (`TIL00`–`TILFF`).
+- **Highlight:** the active edit slot gets a distinct **border** (e.g. 2–3 px accent outline around the cell); inactive cells use a neutral or no border. Optional hover shows index/name (`TIL00`–`TILFF`).
 - **Open from:** **Select Tile…** button (tileset mode sidebar) and/or **Tiles → Select Tile…** menu item.
 - **Status bar:** always show active tile index and name (e.g. `Tile 42 / TIL2A`).
 - **Reuse:** same tile picker when the metatile editor assigns a base-tile index — title differs (`Select Tile for Cell` vs `Select Tile to Edit`).
@@ -360,7 +360,7 @@ Build **one phase at a time**. After each phase, stop and report completion befo
 
 - 256 fixed tile slots in memory (indices 0–255; default names `TIL00`–`TILFF`)
 - **Tile picker window:** 16×16 thumbnail grid; click to switch active edit slot
-- Thumbnails live-update when a tile is edited; highlight active slot
+- Thumbnails live-update when a tile is edited; **accent border** on the active slot in the picker
 - Clear tile, duplicate-to-slot (destination chosen via tile picker), optional per-tile rename
 - No add/remove — slot count is always 256
 
@@ -577,7 +577,7 @@ Each editor window's export panel shows that level's data (and full-table export
 | Data model | `tile_model.py` | Structs, validation, deep copy helpers |
 | Compositing | `composite.py` | Metatile/supertile pixel resolution from tile data |
 | Canvas | `tile_canvas.py` | 8×8 tile grid + per-row fg/bg column |
-| Tile picker | `tile_picker.py` | 16×16 thumbnail grid for tile slots |
+| Tile picker | `tile_picker.py` | 16×16 thumbnail grid; accent border on active slot |
 | Metatile picker | `metatile_picker.py` | Thumbnail grid for defined metatiles (up to 256) |
 | Palette | `palette.py` | Color constants, swatch widgets |
 | Pattern bytes | `pattern_export.py` | 8×8 bitplane → 8-byte TMS9918 pattern encoding |
