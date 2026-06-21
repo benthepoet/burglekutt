@@ -87,8 +87,20 @@ class MetatileEditorWindow:
         left = ttk.Labelframe(content, text="Metatiles", padding=8)
         left.pack(side=tk.LEFT, fill=tk.Y)
 
-        self._metatile_list = tk.Listbox(left, width=18, height=16)
-        self._metatile_list.pack(fill=tk.BOTH, expand=True)
+        list_frame = ttk.Frame(left)
+        list_frame.pack(fill=tk.BOTH, expand=True)
+
+        list_scroll = ttk.Scrollbar(list_frame, orient=tk.VERTICAL)
+        list_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self._metatile_list = tk.Listbox(
+            list_frame,
+            width=18,
+            height=16,
+            yscrollcommand=list_scroll.set,
+        )
+        self._metatile_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        list_scroll.config(command=self._metatile_list.yview)
         self._metatile_list.bind("<<ListboxSelect>>", self._on_list_select)
 
         buttons = ttk.Frame(left)
@@ -309,9 +321,11 @@ class MetatileEditorWindow:
             suffix = " [{}]".format(summary) if summary else ""
             self._metatile_list.insert(tk.END, "{}{}".format(metatile["name"], suffix))
         if self.project.metatiles:
+            index = self.project.active_metatile_index
             self._metatile_list.selection_clear(0, tk.END)
-            self._metatile_list.selection_set(self.project.active_metatile_index)
-            self._metatile_list.activate(self.project.active_metatile_index)
+            self._metatile_list.selection_set(index)
+            self._metatile_list.activate(index)
+            self._metatile_list.see(index)
 
     def _refresh_flags(self):
         if not self.project.metatiles:
