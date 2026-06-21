@@ -154,6 +154,7 @@ src/
   composite.py           # Resolve metatile/supertile preview pixels (shared)
   tile_model.py          # Tile / metatile / supertile structs, validation
   palette.py             # TMS9918 color constants and swatch helpers
+  theme.py               # Per-window backgrounds, shared chrome, ttk styles
   pattern_export.py      # 8×8 bitplane → 8 pattern bytes
   color_export.py        # Per-line fg/bg → 8 color-table bytes
   asm_export.py          # Assembly text rendering
@@ -265,6 +266,43 @@ Implementation requirements:
 - **Supertile window:** supertile list + add/remove/rename (left), 4×5 picker + composite + export (center)
 - **Shared:** status bar per window showing that editor's active slot; **File** menu (New/Load/Save/Exit) on each window or one coordinator — must not desync project state
 - **No Mode menu** — replaced by **Window** menu (focus Tileset / Metatile / Supertile)
+
+### Visual theme
+
+Match the **ti99-sprite-editor** look: soft tinted window backgrounds, **white** content panels, **grey** draw/composite canvases, coordinated `ttk` button borders. Define all colors in `theme.py`; each **top-level window gets its own background tint** so editors are easy to tell apart at a glance.
+
+#### Per-window backgrounds
+
+| Window | Constant | Background | Button borders (border / light / dark) |
+|--------|----------|------------|----------------------------------------|
+| **Tileset editor** | `TILESET_WINDOW_BG` | `#E8F5E9` | `#A5D6A7` / `#F1F8F2` / `#81C784` |
+| **Metatile editor** | `METATILE_WINDOW_BG` | `#FFF7ED` | `#C4B5A5` / `#FFF8F0` / `#DFC8B5` |
+| **Supertile editor** | `SUPERTILE_WINDOW_BG` | `#EEF4FF` | `#A8B4C8` / `#F4F8FF` / `#C5D4E8` |
+| **Tile picker** | `TILE_PICKER_BG` | `#FEF3C7` | `#D4C48A` / `#FFFBEB` / `#C8B870` |
+
+Map/screen editor windows (follow-on) get their own tints when implemented — do not reuse the three tile-editor colors.
+
+#### Shared chrome (all windows)
+
+| Constant | Value | Use |
+|----------|-------|-----|
+| `CANVAS_BG` | `#777777` | Tile draw canvas, metatile/supertile composite areas |
+| `CANVAS_GRID_OUTLINE` | `#555555` | Grid lines on draw/composite canvases |
+| `PANEL_BG` | `#FFFFFF` | Lists, export text, scrollable panel interiors |
+| `PANEL_TITLE_FG` | `#111827` | Section headings |
+| `PANEL_TITLE_FONT` | `("Arial", 11, "bold")` | Section headings |
+| `TEXT_FG` | `#1F2937` | Labels and status text |
+| `BUTTON_DISABLED_BG` | `#E5E7EB` | Disabled buttons |
+| `BUTTON_DISABLED_FG` | `#9CA3AF` | Disabled button text |
+| `ACCENT_BORDER` | `#2563EB` | Active tile-picker cell outline (and similar selection rings) |
+
+#### Implementation
+
+- Each editor module calls `theme.apply_window_theme(root, WINDOW_BG)` on startup (configure `root`, outer frames, and `ttk` styles for that tint — same pattern as ti99-sprite-editor `_apply_app_theme` / `_configure_theme_style`).
+- **Chrome** (sidebars, outer frames) uses the window tint; **panels** (lists, assembly export) stay `PANEL_BG` white for readability.
+- Title bar / window title should include the editor name (`burglekutt — Tileset`, `burglekutt — Metatile`, etc.).
+- Apply theme in **Phase 1** for the tileset window; carry the pattern to each new window as it is added (Phase 4 metatile, Phase 5 supertile, Phase 3 tile picker).
+
 ### Tile editing canvas (tileset mode)
 
 The tile canvas must be **large enough to draw comfortably** — this is the primary workspace and must not feel cramped. Define scale constants in `tile_canvas.py` (or `palette.py` if shared).
@@ -326,7 +364,7 @@ A separate window for choosing which of the 256 tileset slots to edit.
 - **Layout:** 16 columns × 16 rows = 256 cells, index **row-major** (0 top-left → 255 bottom-right).
 - **Cell content:** scaled thumbnail of the tile (resolved pattern + per-line colors); empty slots show a neutral placeholder.
 - **Selection:** click a cell to make it the active edit slot; close or keep the window open (user preference — default: stay open, non-modal `Toplevel`).
-- **Highlight:** the active edit slot gets a distinct **border** (e.g. 2–3 px accent outline around the cell); inactive cells use a neutral or no border. Optional hover shows index/name (`TIL00`–`TILFF`).
+- **Highlight:** the active edit slot gets a distinct **border** (2–3 px `ACCENT_BORDER` outline around the cell); inactive cells use a neutral or no border. Optional hover shows index/name (`TIL00`–`TILFF`).
 - **Open from:** **Select Tile…** button (tileset mode sidebar) and/or **Tiles → Select Tile…** menu item.
 - **Status bar:** always show active tile index and name (e.g. `Tile 42 / TIL2A`).
 - **Reuse:** same tile picker when the metatile editor assigns a base-tile index — title differs (`Select Tile for Cell` vs `Select Tile to Edit`).
@@ -352,6 +390,7 @@ Build **one phase at a time**. After each phase, stop and report completion befo
 ### Phase 1: Shell + tileset canvas
 
 - `editor.py` creates shared `Project` and opens the **tileset editor** window (metatile/supertile windows stubbed or hidden until later phases)
+- `theme.py` + `TILESET_WINDOW_BG` applied to tileset window (ti99-sprite-editor visual vocabulary)
 - 8×8 drawing canvas at **`TILE_PIXEL_SCALE_DEFAULT` (32×)** with visible grid lines
 - Enforce `TILE_PIXEL_SCALE_MIN` — canvas must not be too small to use
 - Status bar, menu skeleton (File, Window, Help)
@@ -370,14 +409,14 @@ Build **one phase at a time**. After each phase, stop and report completion befo
 ### Phase 3: Tileset management + tile picker
 
 - 256 fixed tile slots in memory (indices 0–255; default names `TIL00`–`TILFF`)
-- **Tile picker window:** 16×16 thumbnail grid at `PICKER_TILE_SCALE_DEFAULT`; click to switch active edit slot
+- **Tile picker window:** 16×16 thumbnail grid at `PICKER_TILE_SCALE_DEFAULT`; `TILE_PICKER_BG` tint; click to switch active edit slot
 - Thumbnails live-update when a tile is edited; **accent border** on the active slot; full grid fits without scrolling
 - Clear tile, duplicate-to-slot (destination chosen via tile picker), optional per-tile rename
 - No add/remove — slot count is always 256
 
 ### Phase 4: Metatile editor window + live tile cascade
 
-- Open **metatile editor** alongside tileset editor (both visible by default)
+- Open **metatile editor** alongside tileset editor (both visible by default); `METATILE_WINDOW_BG` tint
 - `project.notify` wiring: tile edits refresh metatile composites that reference the changed tile
 - 2×2 picker: each cell shows a base-tile preview; click to assign tile index via shared **16×16 tile picker**
 - **Flags editor:** checkboxes (or toggles) for solid, hurt, water, door, stairs — writes `metatiles[i].flags`
@@ -386,7 +425,7 @@ Build **one phase at a time**. After each phase, stop and report completion befo
 
 ### Phase 5: Supertile editor window + full cascade
 
-- Open **supertile editor** alongside the other two editors
+- Open **supertile editor** alongside the other two editors; `SUPERTILE_WINDOW_BG` tint
 - Tile edits cascade through metatiles into supertiles; metatile edits cascade into supertiles
 - 4×5 picker over metatile previews; click cell to assign metatile index via **metatile picker**
 - Supertile list with add/remove/rename (max 256)
@@ -401,7 +440,7 @@ Build **one phase at a time**. After each phase, stop and report completion befo
 
 ### Phase 7: Polish
 
-- Keyboard shortcuts, ttk styling
+- Keyboard shortcuts; verify all windows use `theme.py` consistently
 - Bulk line-color tools (copy row colors, fill all rows, apply fg/bg to selection)
 - Help → About
 
@@ -590,7 +629,8 @@ Each editor window's export panel shows that level's data (and full-table export
 | Canvas | `tile_canvas.py` | 8×8 tile grid + per-row fg/bg column |
 | Tile picker | `tile_picker.py` | 16×16 grid at `PICKER_TILE_SCALE_*`; accent border on active slot |
 | Metatile picker | `metatile_picker.py` | Thumbnail grid for defined metatiles (up to 256) |
-| Palette | `palette.py` | Color constants, swatch widgets |
+| Theme | `theme.py` | Per-window tints, shared chrome, `ttk` style setup |
+| Palette | `palette.py` | TMS9918 color constants, swatch widgets |
 | Pattern bytes | `pattern_export.py` | 8×8 bitplane → 8-byte TMS9918 pattern encoding |
 | Color bytes | `color_export.py` | 8 `{fg, bg}` rows → 8-byte color-table encoding |
 | ASM export | `asm_export.py` | Pure rendering from model dicts |
