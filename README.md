@@ -6,7 +6,7 @@ Named after Burglekutt from *Willow*. A desktop authoring toolchain for a TI-99/
 
 The tile editor is **complete**. Planned follow-on apps in this repo:
 
-1. **Tile image editor** — compose large images from base tiles (configurable grid size per image; title screen, logos, etc.)
+1. **Tile image editor** — compose large images from base tiles for **Graphics II** display (per-line fg/bg within each 8×8 tile); configurable grid per image (title screen, logos, etc.); exports a **self-contained tileset** (pattern + color-table bytes for tiles used, up to 256) and a **layout map** (which tile goes where)
 2. **Map/screen editor** — place supertiles on playfields and link world screens
 
 ## Requirements

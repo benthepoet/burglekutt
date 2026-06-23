@@ -24,7 +24,7 @@ The tile editor is a desktop app with **three simultaneous windows** (tileset, m
 | **Supertile** | 4×4 metatiles | 64×64 | Screen-building blocks for the playfield |
 | **Tile image** | W×H base tiles | 8W×8H px | Large composed art (title screen, logos, static screens) |
 
-The tile editor must produce data the game can consume directly — **pattern bytes**, **color-table bytes**, metatile tables, and supertile maps — as assembly `BYTE` blocks (`PATTERNS`, `COLORS`, `METAS`, `SUPERS`). The tile image editor adds **tile-index layout tables** for multi-tile static images.
+The tile editor must produce data the game can consume directly — **pattern bytes**, **color-table bytes**, metatile tables, and supertile maps — as assembly `BYTE` blocks (`PATTERNS`, `COLORS`, `METAS`, `SUPERS`). The tile image editor adds a **self-contained per-image export**: the **tileset used by that image** (up to 256 tiles — patterns + color tables) plus a **layout map** (which local tile index goes in each grid cell).
 
 - **Language:** Python 3.6+ (stdlib only — no pip dependencies)
 - **UI:** Tkinter / ttk
@@ -465,6 +465,22 @@ Phases 1–7 are **complete** (historical checklist). New work should target map
 
 A **third app in this repo** for composing **large static images** from **base tile indices** — not metatiles or supertiles. Primary use case: **title screen** art built from the same 256-slot tileset the tile editor maintains.
 
+### Graphics II display target
+
+Tile images are intended for the **TI-99 VDP Graphics II** (or equivalent) mode — the same mode the tile editor’s pattern + **color table** bytes target. Color is **per scanline within each 8×8 tile**, not one color per tile and not a flat palette index per cell.
+
+| Concept | burglekutt / export |
+|---------|---------------------|
+| Pattern | 8×8 bitplane per tile (`pattern` grid → 8 pattern bytes) |
+| Per-line color | 8 color-table bytes per tile; byte `n` = `(fg << 4) \| bg` for row `n` |
+| On-screen pixel | `colors[row].fg` if `pattern[row][col] == 1`, else `colors[row].bg` |
+| Image editor preview | Must resolve through `resolve_tile_pixels` / `resolve_pixel_color` — same as tile picker and tileset canvas |
+| Export | **Both** `{name}_PATTERNS` and `{name}_COLORS` are required game data; never export layout without the matching color tables |
+
+**Authoring colors** — per-line fg/bg is edited in the **tileset editor** (row swatches + palette popup). The tile image editor **places** global tile indices; it does not replace the tileset color workflow. Live preview still reflects tileset color edits via `TILE_CHANGED`.
+
+**Runtime** — the game loads the exported image tileset’s pattern and color tables into VDP Graphics II table memory, then paints the nametable/layout using `{name}_MAP` local indices. Color 0 remains transparent (pattern bit chooses fg/bg; index 0 uses backdrop/checkerboard in the UI only).
+
 ### Responsibilities
 
 | Concern | Purpose |
@@ -473,36 +489,64 @@ A **third app in this repo** for composing **large static images** from **base t
 | **Image list** | Multiple named images per project (e.g. `TITLE`, `LOGO`); add/remove/rename |
 | **Dimensions** | **Configurable width×height per image** (in tiles); set at create time or via resize with validation |
 | **Live preview** | Full-image composite preview; updates when tileset slots change upstream |
-| **Export** | Row-major tile-index table as ASM `BYTE` block and raw binary |
+| **Export** | **Image tileset** (patterns + colors for tiles used, ≤ 256) + **layout map** (row-major local indices); ASM + binary via preview window |
 
-Does **not** edit tile patterns/colors — reads `tiles[]` from `Project`. Does **not** use metatile/supertile tables.
+Does **not** edit tile patterns/colors — reads `tiles[]` from `Project`. Does **not** use metatile/supertile tables. Export is **self-contained**: the game can load the image’s pattern/color data and placement map without referencing the global game tileset slots.
 
 ### Entry point
 
 `python3 src/image_editor.py` — loads or creates a `Project`, opens the tile image editor window.
 
-### Tile image data shape
+### Tile image data shape (project JSON — authoring)
 
-Each **tile image** is a named rectangle of base tile indices:
+Each **tile image** is a named rectangle of **global** base tile indices (into the project’s 256-slot tileset):
 
 | Field | Type | Notes |
 |-------|------|-------|
 | `name` | string | e.g. `TITLE`, `TITLESCR` |
 | `width` | int | Grid width in **tiles** (≥ 1) |
 | `height` | int | Grid height in **tiles** (≥ 1) |
-| `cells` | int[] | `width × height` entries, row-major; each value 0–255 |
+| `cells` | int[] | `width × height` entries, row-major; each value 0–255 (global tile index) |
 
 Pixel size of the composed image is `width × 8` by `height × 8`.
 
+### Tile image export (game data)
+
+Export produces **two related blocks** per image. The editor **deduplicates** tiles referenced in `cells`, builds a **local tileset** (0 .. N−1, N ≤ 256), and remaps the layout to **local indices**.
+
+| Block | Size | Purpose |
+|-------|------|---------|
+| **Patterns** | N × 8 bytes | Pattern bytes for each **unique** tile used, in local order |
+| **Colors** | N × 8 bytes | **Graphics II color-table** bytes for the same N tiles (8 rows × fg/bg per tile), same order as patterns |
+| **Layout map** | W × H bytes | One local tile index per grid cell, row-major (nametable / pattern placement) |
+
+**Local order** — collect unique global indices from `cells` (stable sort by first appearance in row-major order, or ascending global index — pick one and document in `image_export.py`; default: **first appearance** in row-major scan). Map each global index to 0 .. N−1. Each `cells[k]` exports as the local index for that global tile.
+
+Reject export if N > 256 (should not occur if global indices are 0–255).
+
 ```asm
-TITLE
-    BYTE >00,>01,>02,>03   ; row 0 tile indices
-    BYTE >04,>05,>06,>07   ; row 1
+TITLE_PATTERNS
+    BYTE >00,>10,>30,>7e,>7e,>30,>10,>00   ; local tile 0 (from global TIL??)
+    BYTE >ff,>81,>81,>81,>81,>81,>81,>ff   ; local tile 1
+    ; ... N tiles × 8 bytes ...
+
+TITLE_COLORS
+    BYTE >f1,>f1,>f1,>f1,>f1,>f1,>f1,>f1   ; local tile 0 color table (per-line fg/bg)
+    BYTE >f2,>12,>f2,>12,>f2,>12,>f2,>12   ; local tile 1 (example: varying fg/bg per row)
+    ; ... N tiles × 8 bytes — one BYTE per scanline per tile ...
+
+TITLE_MAP
+    BYTE >00,>01,>00,>03   ; row 0: local tile indices
+    BYTE >01,>01,>02,>00   ; row 1
     ; ... height rows × width bytes ...
-TITLEEND
+TITLE_MAPEND
 ```
 
-Export label pattern (default): `{image_name}` or `IMG_{index:02d}`. Binary block size: `width × height` bytes (one index per cell).
+Default label patterns: `{name}_PATTERNS`, `{name}_COLORS`, `{name}_MAP`, `{name}_MAPEND`.
+
+**Binary layout** (concatenated or separate files): N×8 pattern bytes + N×8 color bytes + W×H layout bytes. Preview window shows all three sections before save.
+
+Implement dedupe/remap in `image_export.py` (pure, testable); reuse `pattern_export.py` and `color_export.py` on resolved tile dicts from `project.tiles[global_index]` so exported color tables preserve **per-line** Graphics II encoding from the tileset editor.
 
 ### Shared repo benefits
 
@@ -523,10 +567,10 @@ Export label pattern (default): `{image_name}` or `IMG_{index:02d}`. Binary bloc
 Build **one phase at a time**; stop and report after each unless the user says to continue:
 
 1. **Shell** — `image_editor.py`, `image_model.py`, load tileset from project, editor window stub, `IMAGE_EDITOR_WINDOW_BG` theme
-2. **Grid editor** — configurable W×H image, cell assignment via tile picker, live composite preview (`resolve_tile_image_pixels` in `composite.py`)
+2. **Grid editor** — configurable W×H image, cell assignment via tile picker, live **Graphics II** composite preview (`resolve_tile_image_pixels` in `composite.py` — pattern + per-line colors per cell)
 3. **Image list** — add/remove/rename images; per-image dimensions on create; block invalid resize if it would truncate without confirm
-4. **Project I/O + export** — JSON v2 `tile_images`; ASM/binary export per image and full table; preview-before-save
-5. **Polish** — shortcuts, validation (indices 0–255), Help → Keyboard Shortcuts…
+4. **Project I/O + export** — JSON v2 `tile_images`; export **image tileset** (≤256 unique tiles: patterns + colors) + **layout map** (local indices); ASM/binary; preview-before-save
+5. **Polish** — shortcuts, validation (global indices 0–255, export rejects N > 256), Help → Keyboard Shortcuts…
 
 ### Target modules (incremental)
 
@@ -535,9 +579,10 @@ src/
   image_editor.py        # App entry + coordinator
   image_editor_window.py # Editor UI (or inline in image_editor.py initially)
   image_model.py         # Tile image structs, validation, defaults
+  image_export.py        # Dedupe tiles, local remap, patterns/colors/map bytes + ASM
 ```
 
-Extend `project.py` with `tile_images[]`, CRUD, and `ChangeEvent.TILE_IMAGE_CHANGED`. Extend `composite.py` with `resolve_tile_image_pixels(image, tiles)`.
+Extend `project.py` with `tile_images[]`, CRUD, and `ChangeEvent.TILE_IMAGE_CHANGED`. Extend `composite.py` with `resolve_tile_image_pixels(image, tiles)`. Add `formats/ti99_default/` labels for `{name}_PATTERNS`, `{name}_COLORS`, `{name}_MAP` as needed.
 
 ## Follow-on: map & screen editor
 
@@ -718,8 +763,11 @@ Label patterns (suggested defaults — adjust if user specifies otherwise):
 | Tile colors (single) | `{tile_name}_COL` or `TIL_{index:02d}_COL` |
 | Metatile block | `{meta_name}` or `MT_{index:02d}` |
 | Supertile block | `{super_name}` or `ST_{index:02d}` |
+| Tile image patterns | `{image_name}_PATTERNS` |
+| Tile image colors | `{image_name}_COLORS` |
+| Tile image layout map | `{image_name}_MAP` |
 
-Each editor's **Export** menu opens a preview window for that level's data (full table: tileset `PATTERNS`+`COLORS`, all `METAS`, all `SUPERS`). Preview provides **Copy Assembly**, **Save Assembly…** / **Save Binary…**, and **Close**. Shortcuts: **Ctrl+Shift+A** / **Ctrl+Shift+B** open preview; **Ctrl+S** saves from preview.
+Each editor's **Export** menu opens a preview window for that level's data (tile editor: full `PATTERNS`+`COLORS`; metatile: `METAS`; supertile: `SUPERS`; **tile image editor**: `{name}_PATTERNS`, `{name}_COLORS`, `{name}_MAP` for the active image). Preview provides **Copy Assembly**, **Save Assembly…** / **Save Binary…**, and **Close**. Shortcuts: **Ctrl+Shift+A** / **Ctrl+Shift+B** open preview; **Ctrl+S** saves from preview.
 
 ## Architecture guidelines
 
@@ -747,6 +795,7 @@ Each editor's **Export** menu opens a preview window for that level's data (full
 | ASM export | `asm_export.py` | Pure rendering from model dicts |
 | Formats | `asm_format_schema.py` | Scan `formats/*/format.json` |
 | Binary | `binary_export.py` | Raw bytes for patterns and index tables |
+| Image export | `image_export.py` | Tile-image dedupe, local remap, patterns/colors/map ASM+binary (tile image editor) |
 | Undo | `undo_stack.py` | Per-tile undo/redo stack (tileset editor) |
 
 ### Data invariants
@@ -762,6 +811,7 @@ Preserve unless the user explicitly changes product behavior:
 7. **Color encoding** — Exactly 8 color bytes per tile; byte `n` = `(fg << 4) | bg` for row `n`; must match Graphics II color-table layout.
 8. **Deep copy** — Mutate snapshots via `copy.deepcopy` or dedicated helpers before commit.
 9. **Live cascade** — Editor windows read from `Project` only; never stale cached composites after upstream edits. Tests in `test_composite.py` cover invalidation logic without Tk.
+10. **Tile image Graphics II** — Exported image tilesets always include paired pattern + color-table bytes (8 per tile); layout map uses local indices only. Preview rendering must match VDP per-line color semantics from the tileset editor.
 
 ### Testing
 
@@ -790,6 +840,7 @@ Preserve unless the user explicitly changes product behavior:
 | Project mutations | `test_project.py` |
 | Theme styles | `test_theme.py` |
 | Undo stack | `test_undo_stack.py` |
+| Tile image export | `test_image_export.py` |
 
 ## Coding guidelines
 
