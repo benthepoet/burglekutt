@@ -4,12 +4,13 @@ Guidance for AI agents working on **burglekutt** — a TI-99/4A Zelda-like game 
 
 ## Project summary
 
-This repository contains **two apps**, developed in sequence:
+This repository contains **three apps**, developed in sequence:
 
 | App | Entry point | Status |
 |-----|-------------|--------|
 | **Tile editor** | `python3 src/editor.py` | **Complete** — tileset, metatile, supertile authoring (Phases 1–7) |
-| **Map/screen editor** | `python3 src/map_editor.py` | **Follow-on** — not started; begin only when user asks |
+| **Tile image editor** | `python3 src/image_editor.py` | **Next** — compose large images from base tiles (e.g. title screen) |
+| **Map/screen editor** | `python3 src/map_editor.py` | **Follow-on** — supertile playfields + world map; after tile image editor unless user reprioritizes |
 
 The tile editor is a desktop app with **three simultaneous windows** (tileset, metatile, supertile). Edits propagate downstream live — change a base tile and every metatile/supertile that references it updates immediately.
 
@@ -21,15 +22,16 @@ The tile editor is a desktop app with **three simultaneous windows** (tileset, m
 | **Metatile** | 2×2 base tiles | 16×16 | Reusable terrain/object chunks |
 | **Supertile set** | up to 256 supertiles | — | Composed blocks referencing metatiles |
 | **Supertile** | 4×4 metatiles | 64×64 | Screen-building blocks for the playfield |
+| **Tile image** | W×H base tiles | 8W×8H px | Large composed art (title screen, logos, static screens) |
 
-The editor must produce data the game can consume directly — **pattern bytes**, **color-table bytes**, metatile tables, and supertile maps — as assembly `BYTE` blocks (`PATTERNS`, `COLORS`, `METAS`, `SUPERS`).
+The tile editor must produce data the game can consume directly — **pattern bytes**, **color-table bytes**, metatile tables, and supertile maps — as assembly `BYTE` blocks (`PATTERNS`, `COLORS`, `METAS`, `SUPERS`). The tile image editor adds **tile-index layout tables** for multi-tile static images.
 
 - **Language:** Python 3.6+ (stdlib only — no pip dependencies)
 - **UI:** Tkinter / ttk
 
 User-facing docs live in `README.md`. This file is the agent spec. All conventions for palette, export formats, project JSON, and module layering are defined here and in this repository.
 
-**Scope rule:** Tile editor Phases 1–7 are **complete**. Do not start map/screen editor work unless the user explicitly asks.
+**Scope rule:** Tile editor Phases 1–7 are **complete**. **Tile image editor** is the next scoped app (user priority: title screen). Do not start map/screen editor work until tile image editor phases are complete unless the user explicitly reprioritizes.
 
 ## Target game data shapes
 
@@ -166,6 +168,11 @@ src/
   asm_format_schema.py   # Load export format directories
   binary_export.py       # Raw byte output
 
+  # Tile image editor (next)
+  image_editor.py
+  image_editor_window.py   # optional split from entry
+  image_model.py
+
   # Map/screen editor (follow-on — not implemented)
   map_editor.py
   map_model.py
@@ -187,7 +194,10 @@ Keep business logic out of `editor.py` when it can live in pure, testable module
 # Tile editor (current app)
 python3 src/editor.py
 
-# Map/screen editor (follow-on — after tile editor is complete)
+# Tile image editor (next app)
+python3 src/image_editor.py
+
+# Map/screen editor (follow-on)
 python3 src/map_editor.py
 
 # Run all tests (required before finishing substantive changes)
@@ -195,6 +205,7 @@ python3 -m unittest discover -s tests
 
 # Debug logging (convention — define env var when adding diagnostics)
 TILE_EDITOR_DEBUG=1 python3 src/editor.py
+IMAGE_EDITOR_DEBUG=1 python3 src/image_editor.py
 MAP_EDITOR_DEBUG=1 python3 src/map_editor.py
 ```
 
@@ -448,11 +459,89 @@ Phases 1–7 are **complete** (historical checklist). New work should target map
 - **View → Zoom** on tileset editor (+/− keys when canvas focused)
 - Per-window namespaced `theme.py` ttk styles; Help → About
 
-**Tile editor is complete.** Map/screen editor work starts as a separate follow-on (below) when scoped.
+**Tile editor is complete.** Tile image editor work starts next (below). Map/screen editor follows after that.
+
+## Follow-on: tile image editor
+
+A **third app in this repo** for composing **large static images** from **base tile indices** — not metatiles or supertiles. Primary use case: **title screen** art built from the same 256-slot tileset the tile editor maintains.
+
+### Responsibilities
+
+| Concern | Purpose |
+|---------|---------|
+| **Tile grid canvas** | W×H picker showing resolved tile thumbnails; click cell → assign tile index via shared **tile picker** |
+| **Image list** | Multiple named images per project (e.g. `TITLE`, `LOGO`); add/remove/rename |
+| **Dimensions** | **Configurable width×height per image** (in tiles); set at create time or via resize with validation |
+| **Live preview** | Full-image composite preview; updates when tileset slots change upstream |
+| **Export** | Row-major tile-index table as ASM `BYTE` block and raw binary |
+
+Does **not** edit tile patterns/colors — reads `tiles[]` from `Project`. Does **not** use metatile/supertile tables.
+
+### Entry point
+
+`python3 src/image_editor.py` — loads or creates a `Project`, opens the tile image editor window.
+
+### Tile image data shape
+
+Each **tile image** is a named rectangle of base tile indices:
+
+| Field | Type | Notes |
+|-------|------|-------|
+| `name` | string | e.g. `TITLE`, `TITLESCR` |
+| `width` | int | Grid width in **tiles** (≥ 1) |
+| `height` | int | Grid height in **tiles** (≥ 1) |
+| `cells` | int[] | `width × height` entries, row-major; each value 0–255 |
+
+Pixel size of the composed image is `width × 8` by `height × 8`.
+
+```asm
+TITLE
+    BYTE >00,>01,>02,>03   ; row 0 tile indices
+    BYTE >04,>05,>06,>07   ; row 1
+    ; ... height rows × width bytes ...
+TITLEEND
+```
+
+Export label pattern (default): `{image_name}` or `IMG_{index:02d}`. Binary block size: `width × height` bytes (one index per cell).
+
+### Shared repo benefits
+
+- Reuse `project.py`, `composite.py` (`resolve_tile_pixels`), `tile_picker.py`, `pixel_canvas.py`, `palette.py`, `theme.py`, `shortcuts.py`, `project_io.py`, `formats/`
+- Extend project JSON to **version 2** with `tile_images[]`; tile editor ignores unknown keys; image editor loads v1 graphics-only projects (empty `tile_images`)
+- Tile image editor subscribes to `TILE_CHANGED` so cells referencing edited slots refresh live
+
+### UI conventions
+
+- Single editor window (tint: define `IMAGE_EDITOR_WINDOW_BG` in `theme.py` — new color, do not reuse tileset/metatile/supertile tints)
+- Layout: image list + dimension controls (left), scrollable/zoomable composite canvas (center), optional status bar
+- **File** menu: New/Load/Save project (shared coordinator pattern with tile editor)
+- **Export** menu: on-demand preview window (same pattern as tile editor Phase 6)
+- **Tiles** or cell click opens shared `TilePickerWindow` in assign mode
+
+### Tile image editor phases
+
+Build **one phase at a time**; stop and report after each unless the user says to continue:
+
+1. **Shell** — `image_editor.py`, `image_model.py`, load tileset from project, editor window stub, `IMAGE_EDITOR_WINDOW_BG` theme
+2. **Grid editor** — configurable W×H image, cell assignment via tile picker, live composite preview (`resolve_tile_image_pixels` in `composite.py`)
+3. **Image list** — add/remove/rename images; per-image dimensions on create; block invalid resize if it would truncate without confirm
+4. **Project I/O + export** — JSON v2 `tile_images`; ASM/binary export per image and full table; preview-before-save
+5. **Polish** — shortcuts, validation (indices 0–255), Help → Keyboard Shortcuts…
+
+### Target modules (incremental)
+
+```
+src/
+  image_editor.py        # App entry + coordinator
+  image_editor_window.py # Editor UI (or inline in image_editor.py initially)
+  image_model.py         # Tile image structs, validation, defaults
+```
+
+Extend `project.py` with `tile_images[]`, CRUD, and `ChangeEvent.TILE_IMAGE_CHANGED`. Extend `composite.py` with `resolve_tile_image_pixels(image, tiles)`.
 
 ## Follow-on: map & screen editor
 
-A **second app in this repo**, started only after the tile editor is complete. It consumes the same graphics data (`tiles`, `metatiles`, `supertiles`) and adds level-design authoring.
+A **separate app**, started after the tile image editor unless the user reprioritizes. It consumes graphics data (`tiles`, `metatiles`, `supertiles`) and adds level-design authoring.
 
 ### Responsibilities
 
@@ -466,7 +555,7 @@ Both windows open simultaneously (same pattern as the tile editor). They read gr
 ### Shared repo benefits
 
 - Reuse `project.py`, `composite.py`, `palette.py`, `binary_export.py`, `formats/`
-- One project JSON (version 2) holding graphics **and** map data, or load graphics from a v1 file
+- One project JSON (version 3) holding graphics, **tile images**, and map data; load older versions by ignoring unknown keys
 - One test suite and export dialect
 
 ### Map editor entry point
@@ -503,13 +592,13 @@ Export targets: `SCREENS`, `WORLD` (and related connection tables) — templates
 
 ### Map editor phases (outline)
 
-Build after tile editor Phase 7 is complete, one phase at a time:
+Build after tile image editor is complete, one phase at a time:
 
 1. **Shell** — `map_editor.py`, load graphics from project, screen editor window stub
 2. **Screen editor** — supertile picker, playfield grid, live composite preview
 3. **World editor** — screen grid, placement, basic metadata
 4. **Screen links** — connect screens (doors, edges, stairs)
-5. **Project I/O** — JSON v2 with `screens` + `world`; ASM/binary export for map data
+5. **Project I/O** — JSON v3 with `screens` + `world`; ASM/binary export for map data
 6. **Polish** — shortcuts, validation, referential integrity (invalid supertile indices)
 
 Exact playfield dimensions and link encoding are **TBD** when map editor work begins.
@@ -555,7 +644,20 @@ Versioned JSON project file:
 
 **Version 1** (tile editor): `tiles`, `metatiles`, `supertiles` only.
 
-**Version 2** (map editor follow-on): add `screens` and `world` keys. Map editor must load v1 graphics-only projects; tile editor ignores unknown keys on load.
+**Version 2** (tile image editor): add `tile_images` array. Image editor loads v1 files (empty images). Tile editor ignores `tile_images` on load/save unless extended later.
+
+**Version 3** (map editor follow-on): add `screens` and `world` keys. Map editor loads v1/v2 projects; each app ignores unknown keys on load.
+
+Example `tile_images` entry:
+
+```json
+{
+  "name": "TITLE",
+  "width": 32,
+  "height": 24,
+  "cells": [0, 0, 1, 1, "... row-major, length width×height ..."]
+}
+```
 
 - `tiles`: always 256 entries on save (pad with empty tiles if needed)
 - `metatiles`: 0–256 entries; reject load if more than 256
@@ -709,7 +811,8 @@ Preserve unless the user explicitly changes product behavior:
 - Do not replace multi-window editors with a single mode-switching UI unless the user asks.
 - Do not let editor windows hold divergent copies of tile/metatile/supertile data.
 - Do not reference or depend on code, docs, or conventions from outside this repository in project files unless the user explicitly asks.
-- Do not implement map/screen editor features unless the user explicitly asks.
+- Do not implement map/screen editor features until tile image editor phases are complete unless the user explicitly reprioritizes.
+- Do not implement tile image editor during tile-editor regression fixes unless the user explicitly asks.
 - Do not ship a tile draw canvas smaller than `TILE_PIXEL_SCALE_MIN` — pixel editing must remain practical.
 
 ## License
