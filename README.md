@@ -2,11 +2,11 @@
 
 # burglekutt
 
-Named after Burglekutt from *Willow*. A desktop authoring toolchain for a TI-99/4A Zelda-like game. **burglekutt** lets you draw TMS9918 Graphics II tiles, compose them into metatiles and supertiles, and export assembly or binary data your game can load directly.
+Named after Burglekutt from *Willow*. A desktop authoring toolchain for a TI-99/4A Zelda-like game. **burglekutt** targets **memory-reduced Graphics II** — per-line color within each 8×8 tile, but **256 unique tiles max** (not the 768-tile capacity of full Graphics II). Draw tiles, compose metatiles and supertiles, and export assembly or binary data your game can load directly.
 
 The tile editor is **complete**. Planned follow-on apps in this repo:
 
-1. **Tile image editor** — compose large images from base tiles for **Graphics II** display (per-line fg/bg within each 8×8 tile); configurable grid per image (title screen, logos, etc.); exports a **self-contained tileset** (pattern + color-table bytes for tiles used, up to 256) and a **layout map** (which tile goes where)
+1. **Tile image editor** — compose large images from base tiles for **256-tile Graphics II** (per-line fg/bg within each 8×8 tile); configurable grid per image (title screen, logos, etc.); **at most 256 unique tile definitions** per image (grid area may be larger); exports a **self-contained tileset** (pattern + color-table bytes) and a **layout map** (dense local indices 0–255)
 2. **Map/screen editor** — place supertiles on playfields and link world screens
 
 ## Requirements
@@ -134,6 +134,8 @@ Supertile (4×4)→ 16 metatile indices (64×64 px composite)
 ```
 
 Metatile flags are a bitfield (solid, hurt, water, door, stairs). Color bytes use `(fg << 4) | bg` per scanline. Pattern bytes are MSB-left bitplanes.
+
+The game uses **memory-reduced Graphics II**: at most **256 unique tiles** in VRAM at once (per-line color tables preserved), not the 768-tile layout of full Graphics II with three pattern pages.
 
 See `AGENTS.md` for the full export contract, JSON schema, and agent/developer conventions.
 

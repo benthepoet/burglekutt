@@ -16,7 +16,7 @@ The tile editor is a desktop app with **three simultaneous windows** (tileset, m
 
 | Level | Composition | Pixel size | Purpose |
 |-------|-------------|------------|---------|
-| **Tileset** | 256 base tiles | — | Full pattern table (one TMS9918 tile per slot) |
+| **Tileset** | 256 base tiles | — | Memory-reduced Graphics II pattern + color tables (not 768-tile full G2) |
 | **Base tile** | 8×8 pixels | 8×8 | Single pattern-table entry (index 0–255) |
 | **Metatile set** | up to 256 metatiles | — | Composed chunks referencing base tiles |
 | **Metatile** | 2×2 base tiles | 16×16 | Reusable terrain/object chunks |
@@ -24,7 +24,9 @@ The tile editor is a desktop app with **three simultaneous windows** (tileset, m
 | **Supertile** | 4×4 metatiles | 64×64 | Screen-building blocks for the playfield |
 | **Tile image** | W×H base tiles | 8W×8H px | Large composed art (title screen, logos, static screens) |
 
-The tile editor must produce data the game can consume directly — **pattern bytes**, **color-table bytes**, metatile tables, and supertile maps — as assembly `BYTE` blocks (`PATTERNS`, `COLORS`, `METAS`, `SUPERS`). The tile image editor adds a **self-contained per-image export**: the **tileset used by that image** (up to 256 tiles — patterns + color tables) plus a **layout map** (which local tile index goes in each grid cell).
+The game targets **Graphics II with a memory-reduced tile budget: 256 unique tiles total**, not the full 768-tile Graphics II layout (three 256-tile pattern pages). The toolchain’s fixed 256-slot tileset, per-image export cap, and single `PATTERNS`/`COLORS` table export all reflect that runtime limit.
+
+The tile editor must produce data the game can consume directly — **pattern bytes**, **color-table bytes**, metatile tables, and supertile maps — as assembly `BYTE` blocks (`PATTERNS`, `COLORS`, `METAS`, `SUPERS`). The tile image editor adds a **self-contained per-image export**: the **tileset used by that image** (at most **256** unique tiles — patterns + color tables) plus a **layout map** (which local tile index goes in each grid cell).
 
 - **Language:** Python 3.6+ (stdlib only — no pip dependencies)
 - **UI:** Tkinter / ttk
@@ -39,7 +41,7 @@ Agents should treat these as the canonical export contract unless the user chang
 
 ### Tileset
 
-- **Fixed size: 256 tiles** (indices 0–255) — matches a full TMS9918 pattern table
+- **Fixed size: 256 tiles** (indices 0–255) — matches the game’s **memory-reduced Graphics II** limit (one 256-entry pattern table + matching color tables), **not** the 768-tile capacity of full Graphics II (three pattern pages)
 - Slots are never added or removed; the user picks the active slot from a **16×16 tile-picker window**
 - Empty slots export as zeroed pattern bytes and a default color table unless the user draws into them
 
@@ -465,21 +467,35 @@ Phases 1–7 are **complete** (historical checklist). New work should target map
 
 A **third app in this repo** for composing **large static images** from **base tile indices** — not metatiles or supertiles. Primary use case: **title screen** art built from the same 256-slot tileset the tile editor maintains.
 
-### Graphics II display target
+### Graphics II display target (256-tile memory-reduced mode)
 
-Tile images are intended for the **TI-99 VDP Graphics II** (or equivalent) mode — the same mode the tile editor’s pattern + **color table** bytes target. Color is **per scanline within each 8×8 tile**, not one color per tile and not a flat palette index per cell.
+Tile images are intended for the **TI-99 VDP Graphics II** display path the game actually uses: **per-scanline color tables** within each 8×8 tile, but only **256 unique pattern/color definitions** in VRAM at once — **not** the 768 unique tiles available when all three Graphics II pattern-table pages are used independently.
+
+| Mode | Unique tiles | burglekutt |
+|------|----------------|------------|
+| Full Graphics II (3 pattern pages) | up to **768** | **Not** the game target — do not assume triple-page addressing |
+| **Memory-reduced Graphics II** (this project) | **256 max** | Fixed project tileset, image export dedupe cap, runtime single table load |
+
+Color is **per scanline within each 8×8 tile**, not one color per tile and not a flat palette index per cell.
 
 | Concept | burglekutt / export |
 |---------|---------------------|
 | Pattern | 8×8 bitplane per tile (`pattern` grid → 8 pattern bytes) |
 | Per-line color | 8 color-table bytes per tile; byte `n` = `(fg << 4) \| bg` for row `n` |
+| Tile budget | **≤ 256** unique definitions per loaded tileset (game, title image, etc.) |
 | On-screen pixel | `colors[row].fg` if `pattern[row][col] == 1`, else `colors[row].bg` |
 | Image editor preview | Must resolve through `resolve_tile_pixels` / `resolve_pixel_color` — same as tile picker and tileset canvas |
 | Export | **Both** `{name}_PATTERNS` and `{name}_COLORS` are required game data; never export layout without the matching color tables |
 
 **Authoring colors** — per-line fg/bg is edited in the **tileset editor** (row swatches + palette popup). The tile image editor **places** global tile indices; it does not replace the tileset color workflow. Live preview still reflects tileset color edits via `TILE_CHANGED`.
 
-**Runtime** — the game loads the exported image tileset’s pattern and color tables into VDP Graphics II table memory, then paints the nametable/layout using `{name}_MAP` local indices. Color 0 remains transparent (pattern bit chooses fg/bg; index 0 uses backdrop/checkerboard in the UI only).
+**Runtime** — the game loads the exported image’s pattern + color tables into the **single 256-slot Graphics II table set**, then paints the screen using `{name}_MAP` local indices (0–255). A title screen typically **replaces** the playfield tileset with its exported ≤256 tiles for that scene. Color 0 remains transparent (pattern bit chooses fg/bg; index 0 uses backdrop/checkerboard in the UI only).
+
+**256-tile limit (unique definitions, not grid area)** — memory-reduced Graphics II caps **unique pattern/color definitions** at 256, not the number of grid cells. A 32×24 title screen (768 placements) is valid if it reuses tiles and **N ≤ 256** unique globals appear in `cells`. The editor and export path must enforce **N ≤ 256**; grid `width × height` may exceed 256.
+
+**Authoring validation** — `image_model.validate_unique_tile_count` / `validate_tile_image` run when cells change, on resize/load, and before export. Block assigning a new global tile when it would raise the unique count above 256; show status (e.g. `Unique tiles: 42 / 256`). Same hard limit at export.
+
+**Export validation** — if an image uses more than **256 unique** global tiles, export must **fail with a clear error** citing memory-reduced Graphics II (256 unique tiles, not 768).
 
 ### Responsibilities
 
@@ -504,9 +520,9 @@ Each **tile image** is a named rectangle of **global** base tile indices (into t
 | Field | Type | Notes |
 |-------|------|-------|
 | `name` | string | e.g. `TITLE`, `TITLESCR` |
-| `width` | int | Grid width in **tiles** (≥ 1) |
+| `width` | int | Grid width in **tiles** (≥ 1); product `width × height` is **not** capped at 256 |
 | `height` | int | Grid height in **tiles** (≥ 1) |
-| `cells` | int[] | `width × height` entries, row-major; each value 0–255 (global tile index) |
+| `cells` | int[] | `width × height` entries, row-major; each value 0–255 (global tile index); **≤ 256 distinct values** |
 
 Pixel size of the composed image is `width × 8` by `height × 8`.
 
@@ -522,7 +538,7 @@ Export produces **two related blocks** per image. The editor **deduplicates** ti
 
 **Local order** — collect unique global indices from `cells` (stable sort by first appearance in row-major order, or ascending global index — pick one and document in `image_export.py`; default: **first appearance** in row-major scan). Map each global index to 0 .. N−1. Each `cells[k]` exports as the local index for that global tile.
 
-Reject export if N > 256 (should not occur if global indices are 0–255).
+**Reject export if N > 256** — error message must cite the memory-reduced Graphics II tile limit (256 unique tiles, not 768).
 
 ```asm
 TITLE_PATTERNS
@@ -569,8 +585,8 @@ Build **one phase at a time**; stop and report after each unless the user says t
 1. **Shell** — `image_editor.py`, `image_model.py`, load tileset from project, editor window stub, `IMAGE_EDITOR_WINDOW_BG` theme
 2. **Grid editor** — configurable W×H image, cell assignment via tile picker, live **Graphics II** composite preview (`resolve_tile_image_pixels` in `composite.py` — pattern + per-line colors per cell)
 3. **Image list** — add/remove/rename images; per-image dimensions on create; block invalid resize if it would truncate without confirm
-4. **Project I/O + export** — JSON v2 `tile_images`; export **image tileset** (≤256 unique tiles: patterns + colors) + **layout map** (local indices); ASM/binary; preview-before-save
-5. **Polish** — shortcuts, validation (global indices 0–255, export rejects N > 256), Help → Keyboard Shortcuts…
+4. **Project I/O + export** — JSON v2 `tile_images`; export **image tileset** (≤256 unique tiles: patterns + colors) + **layout map** (local indices); ASM/binary; preview-before-save; reuse `image_model` / `image_export` validation
+5. **Polish** — shortcuts, live unique-tile counter, block cell assignment past 256 unique globals, Help → Keyboard Shortcuts…
 
 ### Target modules (incremental)
 
@@ -811,7 +827,7 @@ Preserve unless the user explicitly changes product behavior:
 7. **Color encoding** — Exactly 8 color bytes per tile; byte `n` = `(fg << 4) | bg` for row `n`; must match Graphics II color-table layout.
 8. **Deep copy** — Mutate snapshots via `copy.deepcopy` or dedicated helpers before commit.
 9. **Live cascade** — Editor windows read from `Project` only; never stale cached composites after upstream edits. Tests in `test_composite.py` cover invalidation logic without Tk.
-10. **Tile image Graphics II** — Exported image tilesets always include paired pattern + color-table bytes (8 per tile); layout map uses local indices only. Preview rendering must match VDP per-line color semantics from the tileset editor.
+10. **Tile image Graphics II** — Memory-reduced mode: **≤ 256 unique tiles** per export (not 768). Exported image tilesets always include paired pattern + color-table bytes (8 per tile); layout map uses local indices 0–255 only. Preview rendering must match VDP per-line color semantics from the tileset editor.
 
 ### Testing
 
