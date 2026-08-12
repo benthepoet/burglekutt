@@ -10,6 +10,7 @@ TILESET_BUTTON_DARK = "#81C784"
 
 METATILE_WINDOW_BG = "#FFF7ED"
 SUPERTILE_WINDOW_BG = "#EEF4FF"
+IMAGE_EDITOR_WINDOW_BG = "#F3E8FF"
 TILE_PICKER_BG = "#FEF3C7"
 
 CANVAS_BG = "#777777"
@@ -36,6 +37,8 @@ def style_prefix(window_bg):
         return "Supertile"
     if window_bg == TILE_PICKER_BG:
         return "Picker"
+    if window_bg == IMAGE_EDITOR_WINDOW_BG:
+        return "Image"
     return "Tileset"
 
 
@@ -85,6 +88,8 @@ def _button_border_colors(window_bg):
         return "#A8B4C8", "#F4F8FF", "#C5D4E8"
     if window_bg == TILE_PICKER_BG:
         return "#D4C48A", "#FFFBEB", "#C8B870"
+    if window_bg == IMAGE_EDITOR_WINDOW_BG:
+        return "#C4B5D4", "#F9F5FF", "#D8C8E8"
     return TILESET_BUTTON_BORDER, TILESET_BUTTON_LIGHT, TILESET_BUTTON_DARK
 
 

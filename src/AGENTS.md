@@ -40,8 +40,8 @@ src/
 ├── asm_export.py         # Assembly text rendering
 ├── asm_format_schema.py  # Load export format directories
 ├── binary_export.py      # Raw byte output
-├── image_editor.py       # Tile image editor (next app)
-├── image_editor_window.py # Optional split from entry
+├── image_editor.py       # Tile image editor entry (Phase 1 shell)
+├── image_editor_window.py # Tile image editor window
 ├── image_model.py        # Tile image structs, validation, unique-tile budget
 ├── image_export.py       # Tile-image dedupe, local remap, patterns/colors/map
 ├── map_editor.py         # Map/screen editor (follow-on)
@@ -236,6 +236,6 @@ python3 -m unittest discover -s tests
 
 # Launch apps
 python3 src/editor.py        # Tile editor (current app)
-python3 src/image_editor.py  # Tile image editor (next)
+python3 src/image_editor.py  # Tile image editor (Phase 1 shell)
 python3 src/map_editor.py    # Map/screen editor (follow-on)
 ```
