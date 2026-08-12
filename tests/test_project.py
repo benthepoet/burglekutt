@@ -45,6 +45,15 @@ class TestProject(unittest.TestCase):
         self.assertEqual(len(events), 1)
         self.assertFalse(project.set_pixel(1, 2, 1))
 
+    def test_set_tile_pixel_edits_given_slot(self):
+        project = Project()
+        events = []
+        project.add_listener(events.append)
+        self.assertTrue(project.set_tile_pixel(5, 2, 3, 1))
+        self.assertEqual(project.get_tile(5)["pattern"][2][3], 1)
+        self.assertEqual(project.get_active_tile()["pattern"][2][3], 0)
+        self.assertEqual(events[0].index, 5)
+
     def test_set_pixel_can_defer_notification(self):
         project = Project()
         events = []

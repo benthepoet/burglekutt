@@ -11,15 +11,15 @@ from image_model import (
     DEFAULT_TILE_IMAGE_WIDTH,
     TILE_IMAGE_MAX_UNIQUE_TILES,
     TileImageUniqueTileLimitError,
-    assign_tile_image_cell,
     count_unique_tiles,
     empty_tile_image,
+    ensure_unique_cell_tile,
     resize_tile_image,
 )
 from pixel_canvas import draw_pixel_grid
 from project import ChangeEvent
 from tile_model import TILE_SIZE
-from tile_picker import TilePickerWindow
+from theme import CANVAS_GRID_OUTLINE
 
 IMAGE_PIXEL_SCALE_DEFAULT = 3
 IMAGE_PIXEL_SCALE_MIN = 1
@@ -32,14 +32,26 @@ def clamp_image_scale(scale):
 
 def tile_image_cell_at(x, y, width, height, scale):
     """Return the cell index under canvas pixel (x, y), or None."""
-    cell = TILE_SIZE * scale
-    if cell <= 0:
+    hit = tile_image_pixel_at(x, y, width, height, scale)
+    if hit is None:
         return None
+    return hit[0]
+
+
+def tile_image_pixel_at(x, y, width, height, scale):
+    """Return (cell_index, local_row, local_col) under canvas pixel (x, y)."""
+    if scale <= 0:
+        return None
+    cell = TILE_SIZE * scale
     col = int(x // cell)
     row = int(y // cell)
     if col < 0 or col >= width or row < 0 or row >= height:
         return None
-    return row * width + col
+    local_col = int((x - col * cell) // scale)
+    local_row = int((y - row * cell) // scale)
+    if local_col < 0 or local_col >= TILE_SIZE or local_row < 0 or local_row >= TILE_SIZE:
+        return None
+    return row * width + col, local_row, local_col
 
 
 class ImageEditorWindow:
@@ -47,7 +59,9 @@ class ImageEditorWindow:
         self.root = root
         self.project = project
         self.coordinator = coordinator
-        self._assign_picker = None
+        self._stroke_tile_index = None
+        self._stroke_dirty = False
+        self._painting = False
         self._image = empty_tile_image(
             width=DEFAULT_TILE_IMAGE_WIDTH,
             height=DEFAULT_TILE_IMAGE_HEIGHT,
@@ -160,7 +174,7 @@ class ImageEditorWindow:
             grid,
             bg=theme.CANVAS_BG,
             highlightthickness=0,
-            cursor="hand2",
+            cursor="crosshair",
         )
         self._hscroll = ttk.Scrollbar(
             grid,
@@ -181,8 +195,13 @@ class ImageEditorWindow:
         self.canvas.grid(row=0, column=0, sticky="nsew")
         self._vscroll.grid(row=0, column=1, sticky="ns")
         self._hscroll.grid(row=1, column=0, sticky="ew")
-        self.canvas.bind("<Button-1>", self._on_canvas_click)
         self.canvas.configure(takefocus=True)
+        self.canvas.bind("<Button-1>", lambda event: self._on_draw(event, 1))
+        self.canvas.bind("<B1-Motion>", lambda event: self._on_draw(event, 1))
+        self.canvas.bind("<Button-3>", lambda event: self._on_draw(event, 0))
+        self.canvas.bind("<B3-Motion>", lambda event: self._on_draw(event, 0))
+        self.canvas.bind("<ButtonRelease-1>", self._on_stroke_end)
+        self.canvas.bind("<ButtonRelease-3>", self._on_stroke_end)
         shortcuts.bind_canvas_zoom(self.canvas, self._zoom_in, self._zoom_out)
 
     def _build_status_bar(self):
@@ -211,65 +230,90 @@ class ImageEditorWindow:
         draw_pixel_grid(self.canvas, pixels, self.scale)
         width, height = self._image_pixel_size()
         self.canvas.configure(scrollregion=(0, 0, width, height))
+        cell = TILE_SIZE * self.scale
+        for col in range(self._image["width"] + 1):
+            x = col * cell
+            if col == self._image["width"]:
+                x = width - 1
+            self.canvas.create_line(x, 0, x, height, fill=CANVAS_GRID_OUTLINE)
+        for row in range(self._image["height"] + 1):
+            y = row * cell
+            if row == self._image["height"]:
+                y = height - 1
+            self.canvas.create_line(0, y, width, y, fill=CANVAS_GRID_OUTLINE)
 
-    def _update_status(self):
+    def _update_status(self, cell_index=None):
         unique = count_unique_tiles(self._image["cells"])
-        self._status_label.configure(
-            text="{}  {}×{}  Unique tiles: {} / {}".format(
+        parts = [
+            "{}  {}×{}".format(
                 self._image["name"],
                 self._image["width"],
                 self._image["height"],
-                unique,
-                TILE_IMAGE_MAX_UNIQUE_TILES,
-            )
-        )
+            ),
+            "Unique tiles: {} / {}".format(unique, TILE_IMAGE_MAX_UNIQUE_TILES),
+        ]
+        if cell_index is not None:
+            tile_index = self._image["cells"][cell_index]
+            col = cell_index % self._image["width"]
+            row = cell_index // self._image["width"]
+            tile = self.project.get_tile(tile_index)
+            parts.append("Cell {},{} → {} (TIL{:02X})".format(
+                col, row, tile["name"], tile_index
+            ))
+        self._status_label.configure(text="  |  ".join(parts))
 
-    def _on_canvas_click(self, event):
+    def _on_draw(self, event, bit):
         canvas_x = self.canvas.canvasx(event.x)
         canvas_y = self.canvas.canvasy(event.y)
-        cell_index = tile_image_cell_at(
+        hit = tile_image_pixel_at(
             canvas_x,
             canvas_y,
             self._image["width"],
             self._image["height"],
             self.scale,
         )
-        if cell_index is None:
+        if hit is None:
             return
-        self._on_cell_click(cell_index)
-
-    def _close_assign_picker(self):
-        if self._assign_picker is not None:
-            self._assign_picker.close()
-            self._assign_picker = None
-
-    def _on_cell_click(self, cell_index):
-        if self._assign_picker is not None:
-            self._assign_picker.focus()
+        cell_index, local_row, local_col = hit
+        if not self._painting:
+            self._begin_cell_stroke(cell_index)
+        elif (
+            self._stroke_tile_index is not None
+            and self._image["cells"][cell_index] != self._stroke_tile_index
+        ):
+            self._end_cell_stroke()
+            self._begin_cell_stroke(cell_index)
+        if self._stroke_tile_index is None:
             return
-
-        def on_tile_selected(tile_index):
-            self._assign_picker = None
-            try:
-                assign_tile_image_cell(self._image, cell_index, tile_index)
-            except TileImageUniqueTileLimitError as exc:
-                messagebox.showerror("Unique Tile Limit", str(exc), parent=self.root)
-                return
+        if self.project.set_tile_pixel(
+            self._stroke_tile_index,
+            local_row,
+            local_col,
+            bit,
+            notify=False,
+        ):
+            self._stroke_dirty = True
             self._refresh_preview()
-            self._update_status()
+            self._update_status(cell_index)
 
-        self._assign_picker = TilePickerWindow(
-            self.root,
-            self.project,
-            mode="assign",
-            title="Select Tile for Cell",
-            on_select=on_tile_selected,
-            on_close=self._on_assign_picker_closed,
-        )
-        self._assign_picker.focus()
+    def _begin_cell_stroke(self, cell_index):
+        self._painting = True
+        tile_index, source_index = ensure_unique_cell_tile(self._image, cell_index)
+        if source_index is not None:
+            self.project.duplicate_tile(source_index, tile_index, notify=False)
+        self._stroke_tile_index = tile_index
+        self._stroke_dirty = False
 
-    def _on_assign_picker_closed(self):
-        self._assign_picker = None
+    def _end_cell_stroke(self):
+        if self._stroke_dirty and self._stroke_tile_index is not None:
+            self.project.notify_tile_changed(self._stroke_tile_index)
+        self._stroke_tile_index = None
+        self._stroke_dirty = False
+        self._painting = False
+
+    def _on_stroke_end(self, _event=None):
+        self._end_cell_stroke()
+        self._update_status()
 
     def _set_dimensions(self, _event=None):
         width = simpledialog.askinteger(
@@ -323,12 +367,14 @@ class ImageEditorWindow:
             self._refresh_preview()
 
     def _on_project_change(self, event):
+        if self._painting:
+            return
         if event.kind in (ChangeEvent.TILE_CHANGED, ChangeEvent.PROJECT_LOADED):
             self._refresh_preview()
             self._update_status()
 
     def shutdown(self):
-        self._close_assign_picker()
+        self._end_cell_stroke()
         self.project.remove_listener(self._on_project_change)
 
     def focus(self):
@@ -363,7 +409,7 @@ class ImageEditorWindow:
     def _show_about(self, _event=None):
         messagebox.showinfo(
             "About burglekutt",
-            "burglekutt — TI-99 tile image editor\nPhase 2: grid editor",
+            "burglekutt — TI-99 tile image editor\nPhase 2: draw on tileset tiles",
         )
 
     def _on_close(self, _event=None):

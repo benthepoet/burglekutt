@@ -175,7 +175,7 @@ class Project:
                 refs.append(super_index)
         return refs
 
-    def duplicate_tile(self, src_index, dst_index):
+    def duplicate_tile(self, src_index, dst_index, notify=True):
         if src_index < 0 or src_index >= TILE_COUNT:
             raise IndexError("source tile index out of range")
         if dst_index < 0 or dst_index >= TILE_COUNT:
@@ -183,7 +183,8 @@ class Project:
         copied = copy_tile(self.tiles[src_index])
         copied["name"] = tile_name_for_index(dst_index)
         self.tiles[dst_index] = copied
-        self.notify(ChangeEvent(ChangeEvent.TILE_CHANGED, dst_index))
+        if notify:
+            self.notify(ChangeEvent(ChangeEvent.TILE_CHANGED, dst_index))
 
     def rename_tile(self, index, name):
         validated = validate_tile_name(name)
@@ -241,18 +242,27 @@ class Project:
         self.notify(ChangeEvent(ChangeEvent.SUPERTILE_CHANGED, super_index))
         return True
 
-    def set_pixel(self, row, col, bit, notify=True):
-        tile = self.get_active_tile()
+    def set_tile_pixel(self, tile_index, row, col, bit, notify=True):
+        tile = self.get_tile(tile_index)
         if tile["pattern"][row][col] == bit:
             return False
         tile["pattern"][row][col] = bit
         if notify:
-            self.notify(ChangeEvent(ChangeEvent.TILE_CHANGED, self.active_tile_index))
+            self.notify(ChangeEvent(ChangeEvent.TILE_CHANGED, tile_index))
         return True
+
+    def set_pixel(self, row, col, bit, notify=True):
+        return self.set_tile_pixel(
+            self.active_tile_index, row, col, bit, notify=notify
+        )
+
+    def notify_tile_changed(self, tile_index):
+        """Emit TILE_CHANGED for a tile without mutating data."""
+        self.notify(ChangeEvent(ChangeEvent.TILE_CHANGED, tile_index))
 
     def notify_active_tile_changed(self):
         """Emit TILE_CHANGED for the active tile without mutating data."""
-        self.notify(ChangeEvent(ChangeEvent.TILE_CHANGED, self.active_tile_index))
+        self.notify_tile_changed(self.active_tile_index)
 
     def _validate_color_index(self, value, name):
         if not isinstance(value, int) or not 0 <= value <= 15:

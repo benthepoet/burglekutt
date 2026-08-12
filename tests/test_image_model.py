@@ -10,6 +10,8 @@ from image_model import (
     assign_tile_image_cell,
     count_unique_tiles,
     empty_tile_image,
+    ensure_unique_cell_tile,
+    next_unreferenced_tile_index,
     resize_tile_image,
     unique_tile_indices,
     validate_tile_image,
@@ -81,6 +83,27 @@ class TestImageModel(unittest.TestCase):
         self.assertEqual(image["cells"], [1, 2, 0, 3, 4, 0])
         resize_tile_image(image, 2, 1)
         self.assertEqual(image["cells"], [1, 2])
+
+    def test_ensure_unique_cell_tile_forks_shared_cell(self):
+        image = empty_tile_image("IMG", width=2, height=1)
+        tile_index, source = ensure_unique_cell_tile(image, 0)
+        self.assertEqual(source, 0)
+        self.assertEqual(tile_index, 1)
+        self.assertEqual(image["cells"], [1, 0])
+        tile_index, source = ensure_unique_cell_tile(image, 0)
+        self.assertIsNone(source)
+        self.assertEqual(tile_index, 1)
+
+    def test_ensure_unique_cell_tile_keeps_shared_when_budget_full(self):
+        image = empty_tile_image(
+            "IMG", width=TILE_IMAGE_MAX_UNIQUE_TILES + 1, height=1
+        )
+        image["cells"] = list(range(TILE_IMAGE_MAX_UNIQUE_TILES)) + [0]
+        self.assertIsNone(next_unreferenced_tile_index(image["cells"]))
+        tile_index, source = ensure_unique_cell_tile(image, TILE_IMAGE_MAX_UNIQUE_TILES)
+        self.assertEqual(tile_index, 0)
+        self.assertIsNone(source)
+        self.assertEqual(image["cells"][-1], 0)
 
 
 if __name__ == "__main__":
