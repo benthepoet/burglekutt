@@ -80,42 +80,55 @@ APP_EXPORT_SEQUENCES = (
 )
 
 
-def bind_app_shortcuts(app_root, coordinator):
-    """App-wide file shortcuts (bind_all so they work in any widget)."""
+def _bind_all_sequences(app_root, pairs):
+    for sequence, callback in pairs:
+        app_root.bind_all(
+            sequence,
+            lambda event, handler=callback: _app_shortcut_handler(handler, event),
+        )
+
+
+def bind_file_shortcuts(app_root, coordinator):
+    """App-wide File menu shortcuts (New / Load / Save / Exit)."""
     if coordinator is None:
         return
-    file_pairs = (
-        ("<Control-n>", coordinator.new_project),
-        ("<Control-N>", coordinator.new_project),
-        ("<Control-o>", coordinator.load_project_dialog),
-        ("<Control-O>", coordinator.load_project_dialog),
-        ("<Control-s>", coordinator.save_project_dialog),
-        ("<Control-S>", coordinator.save_project_dialog),
-        ("<Control-q>", coordinator.exit_all),
-        ("<Control-Q>", coordinator.exit_all),
-    )
-    window_pairs = (
-        ("<Control-1>", coordinator.focus_tileset),
-        ("<Control-2>", coordinator.focus_metatile),
-        ("<Control-3>", coordinator.focus_supertile),
-    )
-    export_pairs = (
-        ("<Control-Shift-a>", coordinator.preview_assembly_shortcut),
-        ("<Control-Shift-A>", coordinator.preview_assembly_shortcut),
-        ("<Control-Shift-b>", coordinator.preview_binary_shortcut),
-        ("<Control-Shift-B>", coordinator.preview_binary_shortcut),
+    _bind_all_sequences(
+        app_root,
+        (
+            ("<Control-n>", coordinator.new_project),
+            ("<Control-N>", coordinator.new_project),
+            ("<Control-o>", coordinator.load_project_dialog),
+            ("<Control-O>", coordinator.load_project_dialog),
+            ("<Control-s>", coordinator.save_project_dialog),
+            ("<Control-S>", coordinator.save_project_dialog),
+            ("<Control-q>", coordinator.exit_all),
+            ("<Control-Q>", coordinator.exit_all),
+        ),
     )
 
-    def _bind_all(pairs):
-        for sequence, callback in pairs:
-            app_root.bind_all(
-                sequence,
-                lambda event, handler=callback: _app_shortcut_handler(handler, event),
-            )
 
-    _bind_all(file_pairs)
-    _bind_all(window_pairs)
-    _bind_all(export_pairs)
+def bind_app_shortcuts(app_root, coordinator):
+    """App-wide file, window, and export shortcuts (bind_all)."""
+    if coordinator is None:
+        return
+    bind_file_shortcuts(app_root, coordinator)
+    _bind_all_sequences(
+        app_root,
+        (
+            ("<Control-1>", coordinator.focus_tileset),
+            ("<Control-2>", coordinator.focus_metatile),
+            ("<Control-3>", coordinator.focus_supertile),
+        ),
+    )
+    _bind_all_sequences(
+        app_root,
+        (
+            ("<Control-Shift-a>", coordinator.preview_assembly_shortcut),
+            ("<Control-Shift-A>", coordinator.preview_assembly_shortcut),
+            ("<Control-Shift-b>", coordinator.preview_binary_shortcut),
+            ("<Control-Shift-B>", coordinator.preview_binary_shortcut),
+        ),
+    )
 
 
 def unbind_app_shortcuts(app_root):

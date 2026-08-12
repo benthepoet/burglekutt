@@ -13,6 +13,7 @@ class TestTheme(unittest.TestCase):
         self.assertEqual(theme.style_prefix(theme.METATILE_WINDOW_BG), "Metatile")
         self.assertEqual(theme.style_prefix(theme.SUPERTILE_WINDOW_BG), "Supertile")
         self.assertEqual(theme.style_prefix(theme.TILE_PICKER_BG), "Picker")
+        self.assertEqual(theme.style_prefix(theme.IMAGE_EDITOR_WINDOW_BG), "Image")
 
     def test_ttk_style_uses_namespaced_prefix(self):
         self.assertEqual(
