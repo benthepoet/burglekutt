@@ -6,6 +6,8 @@ from tile_model import TILE_COUNT
 
 TILE_IMAGE_MAX_UNIQUE_TILES = TILE_COUNT
 DEFAULT_TILE_IMAGE_NAME = "IMG00"
+DEFAULT_TILE_IMAGE_WIDTH = 32
+DEFAULT_TILE_IMAGE_HEIGHT = 24
 MAX_TILE_IMAGE_NAME_LEN = 32
 
 
@@ -110,4 +112,37 @@ def validate_tile_image(image):
     for index in cells:
         validate_tile_index(index)
     validate_unique_tile_count(cells)
+    return image
+
+
+def assign_tile_image_cell(image, cell_index, tile_index, *, limit=TILE_IMAGE_MAX_UNIQUE_TILES):
+    """Assign a global tile index to a cell, enforcing the unique-tile budget."""
+    cells = list(image["cells"])
+    if cell_index < 0 or cell_index >= len(cells):
+        raise IndexError("tile image cell index out of range")
+    tile_index = validate_tile_index(tile_index)
+    cells[cell_index] = tile_index
+    validate_unique_tile_count(cells, limit=limit)
+    image["cells"] = cells
+    return image
+
+
+def resize_tile_image(image, width, height, fill=0):
+    """Resize a tile image, copying overlapping cells and filling new ones."""
+    width, height = validate_tile_image_dimensions(width, height)
+    fill = validate_tile_index(fill)
+    old_width = image["width"]
+    old_height = image["height"]
+    old_cells = image["cells"]
+    cells = []
+    for row in range(height):
+        for col in range(width):
+            if row < old_height and col < old_width:
+                cells.append(old_cells[row * old_width + col])
+            else:
+                cells.append(fill)
+    validate_unique_tile_count(cells)
+    image["width"] = width
+    image["height"] = height
+    image["cells"] = cells
     return image

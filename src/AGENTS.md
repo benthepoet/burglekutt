@@ -40,8 +40,8 @@ src/
 ├── asm_export.py         # Assembly text rendering
 ├── asm_format_schema.py  # Load export format directories
 ├── binary_export.py      # Raw byte output
-├── image_editor.py       # Tile image editor entry (Phase 1 shell)
-├── image_editor_window.py # Tile image editor window
+├── image_editor.py       # Tile image editor entry
+├── image_editor_window.py # Tile image editor window (Phase 2 grid)
 ├── image_model.py        # Tile image structs, validation, unique-tile budget
 ├── image_export.py       # Tile-image dedupe, local remap, patterns/colors/map
 ├── map_editor.py         # Map/screen editor (follow-on)
@@ -61,7 +61,7 @@ Keep business logic out of `editor.py` when it can live in pure, testable module
 | Project I/O | `project_io.py` | JSON save/load, normalization on load |
 | Editors | `tileset_editor.py`, `metatile_editor.py`, `supertile_editor.py` | One window each; subscribe to project changes |
 | Data model | `tile_model.py` | Structs, validation, deep copy helpers |
-| Compositing | `composite.py` | Metatile/supertile pixel resolution from tile data |
+| Compositing | `composite.py` | Metatile/supertile/tile-image pixel resolution from tile data |
 | Rendering | `pixel_canvas.py` | Fast PhotoImage/PPM grid drawing for previews |
 | Canvas | `tile_canvas.py` | 8×8 tile grid + per-row fg/bg column |
 | Tile picker | `tile_picker.py` | 16×16 grid at `PICKER_TILE_SCALE_*`; accent border on active slot |
@@ -227,6 +227,7 @@ Label patterns:
 | Theme styles | `test_theme.py` |
 | Undo stack | `test_undo_stack.py` |
 | Tile image export | `test_image_export.py` |
+| Tile image editor geometry | `test_image_editor_window.py` |
 
 ## Commands
 

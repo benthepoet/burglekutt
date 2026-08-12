@@ -7,8 +7,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 from image_model import (
     TILE_IMAGE_MAX_UNIQUE_TILES,
     TileImageUniqueTileLimitError,
+    assign_tile_image_cell,
     count_unique_tiles,
     empty_tile_image,
+    resize_tile_image,
     unique_tile_indices,
     validate_tile_image,
     validate_unique_tile_count,
@@ -57,6 +59,28 @@ class TestImageModel(unittest.TestCase):
         validate_tile_image(image)
         self.assertEqual(len(image["cells"]), 32 * 24)
         self.assertEqual(count_unique_tiles(image["cells"]), 1)
+
+    def test_assign_tile_image_cell(self):
+        image = empty_tile_image("IMG", width=2, height=1)
+        assign_tile_image_cell(image, 1, 7)
+        self.assertEqual(image["cells"], [0, 7])
+
+    def test_assign_tile_image_cell_rejects_over_limit(self):
+        image = empty_tile_image("IMG", width=3, height=1)
+        image["cells"] = [0, 1, 0]
+        with self.assertRaises(TileImageUniqueTileLimitError):
+            assign_tile_image_cell(image, 2, 2, limit=2)
+        self.assertEqual(image["cells"], [0, 1, 0])
+
+    def test_resize_tile_image_preserves_overlap(self):
+        image = empty_tile_image("IMG", width=2, height=2)
+        image["cells"] = [1, 2, 3, 4]
+        resize_tile_image(image, 3, 2)
+        self.assertEqual(image["width"], 3)
+        self.assertEqual(image["height"], 2)
+        self.assertEqual(image["cells"], [1, 2, 0, 3, 4, 0])
+        resize_tile_image(image, 2, 1)
+        self.assertEqual(image["cells"], [1, 2])
 
 
 if __name__ == "__main__":

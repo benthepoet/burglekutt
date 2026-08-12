@@ -55,6 +55,29 @@ def metatiles_referencing_tile(metatiles, tile_index):
     ]
 
 
+def resolve_tile_image_pixels(image, tiles):
+    """Return a (height*8) x (width*8) pixel grid from a tile image layout."""
+    width = image["width"]
+    height = image["height"]
+    cells = image["cells"]
+    tile_cache = {}
+    pixels = []
+    for row in range(height * TILE_SIZE):
+        cell_row = row // TILE_SIZE
+        tile_row = row % TILE_SIZE
+        row_pixels = []
+        for col in range(width * TILE_SIZE):
+            cell_col = col // TILE_SIZE
+            tile_col = col % TILE_SIZE
+            cell_index = cell_row * width + cell_col
+            tile_index = cells[cell_index]
+            if tile_index not in tile_cache:
+                tile_cache[tile_index] = resolve_tile_pixels(tiles[tile_index])
+            row_pixels.append(tile_cache[tile_index][tile_row][tile_col])
+        pixels.append(row_pixels)
+    return pixels
+
+
 def resolve_supertile_pixels(supertile, metatiles, tiles):
     """Return a 64x64 grid of hex colors from a 4x4 supertile."""
     meta_cache = {}

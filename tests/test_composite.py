@@ -9,11 +9,13 @@ from composite import (
     metatiles_referencing_tile,
     resolve_metatile_pixels,
     resolve_supertile_pixels,
+    resolve_tile_image_pixels,
     resolve_tile_pixels,
     supertile_references_metatile,
     supertiles_referencing_metatile,
     tile_is_empty,
 )
+from image_model import empty_tile_image
 from palette import rgb_to_hex
 from tile_model import (
     SUPERTILE_PIXEL_HEIGHT,
@@ -85,6 +87,20 @@ class TestComposite(unittest.TestCase):
         self.assertEqual(len(pixels[0]), SUPERTILE_PIXEL_WIDTH)
         self.assertEqual(pixels[0][0], rgb_to_hex(7))
         self.assertEqual(pixels[63][63], rgb_to_hex(4))
+
+    def test_resolve_tile_image_pixels(self):
+        tiles = [empty_tile() for _ in range(4)]
+        tiles[1]["pattern"][0][0] = 1
+        tiles[1]["colors"][0] = {"fg": 7, "bg": 1}
+        tiles[2]["pattern"][7][7] = 1
+        tiles[2]["colors"][7] = {"fg": 4, "bg": 1}
+        image = empty_tile_image("TITLE", width=2, height=2)
+        image["cells"] = [1, 0, 0, 2]
+        pixels = resolve_tile_image_pixels(image, tiles)
+        self.assertEqual(len(pixels), 16)
+        self.assertEqual(len(pixels[0]), 16)
+        self.assertEqual(pixels[0][0], rgb_to_hex(7))
+        self.assertEqual(pixels[15][15], rgb_to_hex(4))
 
     def test_supertiles_referencing_metatile(self):
         supertiles = [empty_supertile(), empty_supertile()]
