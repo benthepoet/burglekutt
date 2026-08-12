@@ -120,6 +120,13 @@ def bind_app_shortcuts(app_root, coordinator):
             ("<Control-3>", coordinator.focus_supertile),
         ),
     )
+    bind_export_shortcuts(app_root, coordinator)
+
+
+def bind_export_shortcuts(app_root, coordinator):
+    """App-wide Export menu shortcuts."""
+    if coordinator is None:
+        return
     _bind_all_sequences(
         app_root,
         (

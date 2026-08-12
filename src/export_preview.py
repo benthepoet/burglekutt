@@ -14,10 +14,12 @@ from binary_export import (
     supertile_table_bytes,
     tileset_bytes,
 )
+from image_export import image_export_bytes, render_tile_image_export
 
 SCOPE_TILESET = "tileset"
 SCOPE_METATILE = "metatile"
 SCOPE_SUPERTILE = "supertile"
+SCOPE_TILE_IMAGE = "tile_image"
 
 MODE_ASSEMBLY = "assembly"
 MODE_BINARY = "binary"
@@ -43,6 +45,14 @@ def generate_export(project, scope):
         default_asm = "supers.asm"
         default_bin = "supers.bin"
         label = "SUPERS"
+    elif scope == SCOPE_TILE_IMAGE:
+        image = project.get_active_tile_image()
+        assembly = render_tile_image_export(image, project.tiles)
+        binary = image_export_bytes(image, project.tiles)
+        stem = image["name"]
+        default_asm = "{}.asm".format(stem)
+        default_bin = "{}.bin".format(stem)
+        label = "{}_PATTERNS / {}_COLORS / {}_MAP".format(stem, stem, stem)
     else:
         raise ValueError("unknown export scope: {}".format(scope))
     return assembly, binary, default_asm, default_bin, label

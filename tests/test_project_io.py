@@ -36,6 +36,8 @@ class TestProjectIO(unittest.TestCase):
         )
         self.assertEqual(restored.metatiles[0]["flags"], 0x05)
         self.assertEqual(len(restored.supertiles), 1)
+        self.assertIn("tile_images", data)
+        self.assertEqual(restored.tile_images[0]["name"], project.tile_images[0]["name"])
 
     def test_save_and_load_file(self):
         project = Project()
@@ -50,6 +52,24 @@ class TestProjectIO(unittest.TestCase):
         data = parse_project_dict({"version": 1, "tiles": []})
         self.assertEqual(len(data["tiles"]), TILE_COUNT)
         self.assertEqual(data["tiles"][0]["name"], tile_name_for_index(0))
+
+    def test_v1_project_loads_without_tile_images(self):
+        data = parse_project_dict({"version": 1, "tiles": []})
+        self.assertEqual(data["tile_images"], [])
+        restored = Project()
+        restored.load_from_dict(data)
+        self.assertEqual(len(restored.tile_images), 1)
+        self.assertEqual(restored.tile_images[0]["name"], "IMG00")
+
+    def test_round_trip_tile_image(self):
+        project = Project()
+        project.add_tile_image("TITLE", 4, 2)
+        project.get_active_tile_image()["cells"][1] = 3
+        restored = Project()
+        restored.load_from_dict(parse_project_dict(project_to_dict(project)))
+        self.assertEqual(len(restored.tile_images), 2)
+        self.assertEqual(restored.tile_images[1]["name"], "TITLE")
+        self.assertEqual(restored.tile_images[1]["cells"][1], 3)
 
     def test_reject_too_many_metatiles(self):
         metatiles = [{"name": "MT{:02X}".format(i), "flags": 0, "cells": [0, 0, 0, 0]} for i in range(257)]

@@ -26,6 +26,8 @@ class TestProject(unittest.TestCase):
         self.assertEqual(len(project.metatiles), 1)
         self.assertEqual(project.get_active_metatile()["name"], metatile_name_for_index(0))
         self.assertEqual(project.supertiles, [])
+        self.assertEqual(len(project.tile_images), 1)
+        self.assertEqual(project.get_active_tile_image()["name"], "IMG00")
 
     def test_notify_calls_listeners(self):
         project = Project()
@@ -172,6 +174,19 @@ class TestProject(unittest.TestCase):
         project.add_supertile()
         project.set_supertile_cell(0, 0, 0)
         self.assertEqual(project.supertiles_referencing_metatile(0), [0])
+
+    def test_add_rename_remove_tile_image(self):
+        project = Project()
+        index = project.add_tile_image("TITLE", 8, 4)
+        self.assertEqual(index, 1)
+        self.assertEqual(project.get_active_tile_image()["name"], "TITLE")
+        self.assertEqual(project.get_active_tile_image()["width"], 8)
+        project.rename_tile_image(index, "LOGO")
+        self.assertEqual(project.get_tile_image(index)["name"], "LOGO")
+        project.remove_tile_image(index)
+        self.assertEqual(len(project.tile_images), 1)
+        with self.assertRaises(ValueError):
+            project.remove_tile_image(0)
 
 
 if __name__ == "__main__":
