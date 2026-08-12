@@ -5,9 +5,10 @@ import copy
 from tile_model import TILE_COUNT
 
 TILE_IMAGE_MAX_UNIQUE_TILES = TILE_COUNT
+TILE_IMAGE_MAX_CELLS = TILE_COUNT
 DEFAULT_TILE_IMAGE_NAME = "IMG00"
-DEFAULT_TILE_IMAGE_WIDTH = 32
-DEFAULT_TILE_IMAGE_HEIGHT = 24
+DEFAULT_TILE_IMAGE_WIDTH = 16
+DEFAULT_TILE_IMAGE_HEIGHT = 16
 MAX_TILE_IMAGE_NAME_LEN = 32
 MAX_TILE_IMAGES = TILE_COUNT
 
@@ -78,6 +79,14 @@ def validate_tile_image_dimensions(width, height):
         raise ValueError("tile image width and height must be integers")
     if width < 1 or height < 1:
         raise ValueError("tile image width and height must be at least 1")
+    cell_count = width * height
+    if cell_count > TILE_IMAGE_MAX_CELLS:
+        raise ValueError(
+            "tile image is {} tiles ({}×{}); memory-reduced Graphics II allows at most {} "
+            "tiles (not a larger grid that would need more than 256 unique tiles)".format(
+                cell_count, width, height, TILE_IMAGE_MAX_CELLS
+            )
+        )
     return width, height
 
 

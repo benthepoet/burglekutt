@@ -5,6 +5,7 @@ import unittest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
 from image_model import (
+    TILE_IMAGE_MAX_CELLS,
     TILE_IMAGE_MAX_UNIQUE_TILES,
     TileImageUniqueTileLimitError,
     assign_tile_image_cell,
@@ -59,11 +60,19 @@ class TestImageModel(unittest.TestCase):
         validate_tile_image(image)
         self.assertEqual(count_unique_tiles(image["cells"]), TILE_IMAGE_MAX_UNIQUE_TILES)
 
-    def test_large_grid_with_few_unique_tiles_is_valid(self):
-        image = empty_tile_image("LOGO", width=32, height=24)
+    def test_full_256_cell_grid_is_valid(self):
+        image = empty_tile_image("LOGO", width=16, height=16)
         validate_tile_image(image)
-        self.assertEqual(len(image["cells"]), 32 * 24)
+        self.assertEqual(len(image["cells"]), TILE_IMAGE_MAX_CELLS)
         self.assertEqual(count_unique_tiles(image["cells"]), 1)
+
+    def test_dimensions_reject_more_than_256_cells(self):
+        with self.assertRaises(ValueError) as ctx:
+            empty_tile_image("TITLE", width=32, height=24)
+        self.assertIn("768", str(ctx.exception))
+        self.assertIn("256", str(ctx.exception))
+        with self.assertRaises(ValueError):
+            resize_tile_image(empty_tile_image("IMG", width=8, height=8), 32, 24)
 
     def test_assign_tile_image_cell(self):
         image = empty_tile_image("IMG", width=2, height=1)
@@ -98,10 +107,12 @@ class TestImageModel(unittest.TestCase):
         self.assertEqual(tile_index, 1)
 
     def test_ensure_unique_cell_tile_keeps_shared_when_budget_full(self):
-        image = empty_tile_image(
-            "IMG", width=TILE_IMAGE_MAX_UNIQUE_TILES + 1, height=1
-        )
-        image["cells"] = list(range(TILE_IMAGE_MAX_UNIQUE_TILES)) + [0]
+        image = {
+            "name": "IMG",
+            "width": TILE_IMAGE_MAX_UNIQUE_TILES + 1,
+            "height": 1,
+            "cells": list(range(TILE_IMAGE_MAX_UNIQUE_TILES)) + [0],
+        }
         self.assertIsNone(next_unreferenced_tile_index(image["cells"]))
         tile_index, source = ensure_unique_cell_tile(image, TILE_IMAGE_MAX_UNIQUE_TILES)
         self.assertEqual(tile_index, 0)

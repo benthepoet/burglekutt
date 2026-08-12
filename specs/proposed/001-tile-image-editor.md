@@ -39,7 +39,7 @@ Each tile image is a named rectangle of global tile indices (0–255):
 | `name` | string | e.g., `TITLE`, `LOGO` |
 | `width` | int | Grid width in tiles (≥1) |
 | `height` | int | Grid height in tiles (≥1) |
-| `cells` | int[] | `width × height` entries, row-major; **≤256 distinct values** |
+| `cells` | int[] | `width × height` entries, row-major; **`width × height` ≤ 256** and **≤256 distinct values** |
 
 ### Export contract
 
@@ -90,8 +90,8 @@ Each tile image is a named rectangle of global tile indices (0–255):
 ### Phase 3: Image list
 
 - Image list panel: add/remove/rename named images
-- Per-image dimensions set at create time
-- Validate dimensions on resize (warn if it would truncate data)
+- Per-image dimensions set at create time (`width × height` ≤ 256)
+- Validate dimensions on resize (reject >256 cells; warn if shrink would truncate data)
 - Active image switch triggers preview refresh
 
 ### Phase 4: Project I/O + export

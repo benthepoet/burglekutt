@@ -90,7 +90,7 @@ Keep business logic out of `editor.py` when it can live in pure, testable module
 7. **Color encoding** — Exactly 8 color bytes per tile; byte `n` = `(fg << 4) | bg` for row `n`; must match Graphics II color-table layout.
 8. **Deep copy** — Mutate snapshots via `copy.deepcopy` or dedicated helpers before commit.
 9. **Live cascade** — Editor windows read from `Project` only; never stale cached composites after upstream edits.
-10. **Tile image Graphics II** — Memory-reduced mode: **≤ 256 unique tiles** per export (not 768). Exported image tilesets always include paired pattern + color-table bytes (8 per tile); layout map uses local indices 0–255 only.
+10. **Tile image Graphics II** — Memory-reduced mode: **`width × height` ≤ 256** cells and **≤ 256 unique tiles** per image (not 768). Exported image tilesets always include paired pattern + color-table bytes (8 per tile); layout map uses local indices 0–255 only.
 
 ## Coding standards
 

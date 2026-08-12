@@ -10,6 +10,7 @@ from image_model import (
     DEFAULT_TILE_IMAGE_HEIGHT,
     DEFAULT_TILE_IMAGE_WIDTH,
     MAX_TILE_IMAGES,
+    TILE_IMAGE_MAX_CELLS,
     TILE_IMAGE_MAX_UNIQUE_TILES,
     TileImageUniqueTileLimitError,
     count_unique_tiles,
@@ -475,18 +476,21 @@ class ImageEditorWindow:
             return
         width = simpledialog.askinteger(
             "Add Image",
-            "Width in tiles:",
+            "Width in tiles (max {} tiles total):".format(TILE_IMAGE_MAX_CELLS),
             initialvalue=DEFAULT_TILE_IMAGE_WIDTH,
             minvalue=1,
+            maxvalue=TILE_IMAGE_MAX_CELLS,
             parent=self.root,
         )
         if width is None:
             return
+        max_height = TILE_IMAGE_MAX_CELLS // width
         height = simpledialog.askinteger(
             "Add Image",
-            "Height in tiles:",
-            initialvalue=DEFAULT_TILE_IMAGE_HEIGHT,
+            "Height in tiles (max {} for width {}):".format(max_height, width),
+            initialvalue=min(DEFAULT_TILE_IMAGE_HEIGHT, max_height),
             minvalue=1,
+            maxvalue=max_height,
             parent=self.root,
         )
         if height is None:
@@ -549,18 +553,21 @@ class ImageEditorWindow:
     def _set_dimensions(self, _event=None):
         width = simpledialog.askinteger(
             "Set Dimensions",
-            "Width in tiles:",
+            "Width in tiles (max {} tiles total):".format(TILE_IMAGE_MAX_CELLS),
             initialvalue=self._image["width"],
             minvalue=1,
+            maxvalue=TILE_IMAGE_MAX_CELLS,
             parent=self.root,
         )
         if width is None:
             return
+        max_height = TILE_IMAGE_MAX_CELLS // width
         height = simpledialog.askinteger(
             "Set Dimensions",
-            "Height in tiles:",
-            initialvalue=self._image["height"],
+            "Height in tiles (max {} for width {}):".format(max_height, width),
+            initialvalue=min(self._image["height"], max_height),
             minvalue=1,
+            maxvalue=max_height,
             parent=self.root,
         )
         if height is None:
