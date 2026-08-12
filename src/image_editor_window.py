@@ -34,6 +34,16 @@ def clamp_image_scale(scale):
     return max(IMAGE_PIXEL_SCALE_MIN, min(IMAGE_PIXEL_SCALE_MAX, scale))
 
 
+def fit_image_scale(image_width, image_height, view_width, view_height):
+    """Largest integer scale that fits the tile image in the view."""
+    tile_w = image_width * TILE_SIZE
+    tile_h = image_height * TILE_SIZE
+    if tile_w < 1 or tile_h < 1 or view_width < 1 or view_height < 1:
+        return IMAGE_PIXEL_SCALE_MIN
+    scale = min(view_width // tile_w, view_height // tile_h)
+    return clamp_image_scale(scale)
+
+
 def tile_image_cell_at(x, y, width, height, scale):
     """Return the cell index under canvas pixel (x, y), or None."""
     hit = tile_image_pixel_at(x, y, width, height, scale)
@@ -76,7 +86,9 @@ class ImageEditorWindow:
         self.scale = IMAGE_PIXEL_SCALE_DEFAULT
 
         self.root.title("burglekutt — Tile Image")
-        self.root.minsize(640, 400)
+        self.root.minsize(800, 560)
+        self.root.geometry("1200x800")
+        self._did_initial_fit = False
 
         self._window_bg = theme.IMAGE_EDITOR_WINDOW_BG
         self._styles = theme.window_styles(self._window_bg)
@@ -154,6 +166,10 @@ class ImageEditorWindow:
             label="Zoom Out",
             accelerator="-",
             command=self._zoom_out,
+        )
+        view_menu.add_command(
+            label="Fit to Window",
+            command=self._fit_to_window,
         )
         view_menu.add_command(
             label="Reset Zoom",
@@ -269,6 +285,7 @@ class ImageEditorWindow:
         self.canvas.bind("<B3-Motion>", lambda event: self._on_draw(event, 0))
         self.canvas.bind("<ButtonRelease-1>", self._on_stroke_end)
         self.canvas.bind("<ButtonRelease-3>", self._on_stroke_end)
+        self.canvas.bind("<Configure>", self._on_canvas_configure)
         shortcuts.bind_canvas_zoom(self.canvas, self._zoom_in, self._zoom_out)
 
     def _build_status_bar(self):
@@ -427,7 +444,7 @@ class ImageEditorWindow:
             return
         self._end_cell_stroke()
         self._active_index = index
-        self._refresh_preview()
+        self._fit_to_window()
         self._update_status()
 
     def _add_image(self, _event=None):
@@ -483,7 +500,7 @@ class ImageEditorWindow:
         self._images.append(image)
         self._active_index = len(self._images) - 1
         self._refresh_image_list()
-        self._refresh_preview()
+        self._fit_to_window()
         self._update_status()
 
     def _remove_image(self, _event=None):
@@ -506,7 +523,7 @@ class ImageEditorWindow:
         if self._active_index >= len(self._images):
             self._active_index = len(self._images) - 1
         self._refresh_image_list()
-        self._refresh_preview()
+        self._fit_to_window()
         self._update_status()
 
     def _rename_image(self, _event=None):
@@ -561,8 +578,32 @@ class ImageEditorWindow:
             messagebox.showerror("Set Dimensions", str(exc), parent=self.root)
             return
         self._refresh_image_list()
-        self._refresh_preview()
+        self._fit_to_window()
         self._update_status()
+
+    def _on_canvas_configure(self, event):
+        if event.widget is not self.canvas:
+            return
+        if event.width < 32 or event.height < 32:
+            return
+        if self._did_initial_fit:
+            return
+        self._did_initial_fit = True
+        self._fit_to_window()
+
+    def _fit_to_window(self, _event=None):
+        self.canvas.update_idletasks()
+        view_w = max(self.canvas.winfo_width(), 1)
+        view_h = max(self.canvas.winfo_height(), 1)
+        scale = fit_image_scale(
+            self._image["width"],
+            self._image["height"],
+            view_w,
+            view_h,
+        )
+        if scale != self.scale:
+            self.scale = scale
+        self._refresh_preview()
 
     def _zoom_in(self, _event=None):
         scale = clamp_image_scale(self.scale + 1)
@@ -594,7 +635,7 @@ class ImageEditorWindow:
             ]
             self._active_index = 0
             self._refresh_image_list()
-            self._refresh_preview()
+            self._fit_to_window()
             self._update_status()
             return
         if event.kind == ChangeEvent.TILE_CHANGED:
