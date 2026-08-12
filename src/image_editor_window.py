@@ -16,7 +16,8 @@ from image_model import (
     ensure_unique_cell_tile,
     resize_tile_image,
 )
-from pixel_canvas import draw_pixel_grid
+from palette import resolve_pixel_color
+from pixel_canvas import draw_pixel_grid, put_scaled_pixel
 from project import ChangeEvent
 from tile_model import TILE_SIZE
 from theme import CANVAS_GRID_OUTLINE
@@ -293,8 +294,31 @@ class ImageEditorWindow:
             notify=False,
         ):
             self._stroke_dirty = True
-            self._refresh_preview()
+            self._blit_tile_pixel(self._stroke_tile_index, local_row, local_col)
             self._update_status(cell_index)
+
+    def _blit_tile_pixel(self, tile_index, local_row, local_col):
+        """Update one pattern pixel on every image cell that uses tile_index."""
+        photo = getattr(self.canvas, "_pixel_photo", None)
+        if photo is None:
+            self._refresh_preview()
+            return
+        color = resolve_pixel_color(
+            self.project.get_tile(tile_index), local_row, local_col
+        )
+        width = self._image["width"]
+        for cell_index, mapped in enumerate(self._image["cells"]):
+            if mapped != tile_index:
+                continue
+            cell_col = cell_index % width
+            cell_row = cell_index // width
+            put_scaled_pixel(
+                photo,
+                cell_col * TILE_SIZE + local_col,
+                cell_row * TILE_SIZE + local_row,
+                color,
+                self.scale,
+            )
 
     def _begin_cell_stroke(self, cell_index):
         self._painting = True

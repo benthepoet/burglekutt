@@ -4,7 +4,7 @@ import unittest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "src"))
 
-from pixel_canvas import hex_color_to_rgb, ppm_bytes_from_pixels
+from pixel_canvas import hex_color_to_rgb, ppm_bytes_from_pixels, scaled_pixel_rect
 
 
 class TestPixelCanvas(unittest.TestCase):
@@ -16,6 +16,10 @@ class TestPixelCanvas(unittest.TestCase):
         ppm = ppm_bytes_from_pixels(pixels, scale=2)
         self.assertTrue(ppm.startswith(b"P6\n4 4\n255\n"))
         self.assertEqual(len(ppm) - len(b"P6\n4 4\n255\n"), 4 * 4 * 3)
+
+    def test_scaled_pixel_rect(self):
+        self.assertEqual(scaled_pixel_rect(0, 0, 3), (0, 0, 3, 3))
+        self.assertEqual(scaled_pixel_rect(2, 1, 3), (6, 3, 9, 6))
 
 
 if __name__ == "__main__":
