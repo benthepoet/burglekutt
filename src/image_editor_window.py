@@ -1,11 +1,58 @@
-"""Tile image editor window (Phase 1 shell)."""
+"""Tile image editor window."""
 
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import messagebox, simpledialog, ttk
 
 import shortcuts
 import theme
+from composite import resolve_tile_image_pixels
+from image_model import (
+    DEFAULT_TILE_IMAGE_HEIGHT,
+    DEFAULT_TILE_IMAGE_WIDTH,
+    TILE_IMAGE_MAX_UNIQUE_TILES,
+    TileImageUniqueTileLimitError,
+    count_unique_tiles,
+    empty_tile_image,
+    ensure_unique_cell_tile,
+    resize_tile_image,
+)
+from palette import resolve_pixel_color
+from pixel_canvas import draw_pixel_grid, put_scaled_pixel
 from project import ChangeEvent
+from tile_model import TILE_SIZE
+from theme import CANVAS_GRID_OUTLINE
+
+IMAGE_PIXEL_SCALE_DEFAULT = 3
+IMAGE_PIXEL_SCALE_MIN = 1
+IMAGE_PIXEL_SCALE_MAX = 8
+
+
+def clamp_image_scale(scale):
+    return max(IMAGE_PIXEL_SCALE_MIN, min(IMAGE_PIXEL_SCALE_MAX, scale))
+
+
+def tile_image_cell_at(x, y, width, height, scale):
+    """Return the cell index under canvas pixel (x, y), or None."""
+    hit = tile_image_pixel_at(x, y, width, height, scale)
+    if hit is None:
+        return None
+    return hit[0]
+
+
+def tile_image_pixel_at(x, y, width, height, scale):
+    """Return (cell_index, local_row, local_col) under canvas pixel (x, y)."""
+    if scale <= 0:
+        return None
+    cell = TILE_SIZE * scale
+    col = int(x // cell)
+    row = int(y // cell)
+    if col < 0 or col >= width or row < 0 or row >= height:
+        return None
+    local_col = int((x - col * cell) // scale)
+    local_row = int((y - row * cell) // scale)
+    if local_col < 0 or local_col >= TILE_SIZE or local_row < 0 or local_row >= TILE_SIZE:
+        return None
+    return row * width + col, local_row, local_col
 
 
 class ImageEditorWindow:
@@ -13,9 +60,17 @@ class ImageEditorWindow:
         self.root = root
         self.project = project
         self.coordinator = coordinator
+        self._stroke_tile_index = None
+        self._stroke_dirty = False
+        self._painting = False
+        self._image = empty_tile_image(
+            width=DEFAULT_TILE_IMAGE_WIDTH,
+            height=DEFAULT_TILE_IMAGE_HEIGHT,
+        )
+        self.scale = IMAGE_PIXEL_SCALE_DEFAULT
 
         self.root.title("burglekutt — Tile Image")
-        self.root.minsize(480, 280)
+        self.root.minsize(640, 400)
 
         self._window_bg = theme.IMAGE_EDITOR_WINDOW_BG
         self._styles = theme.window_styles(self._window_bg)
@@ -35,6 +90,7 @@ class ImageEditorWindow:
         self.root.bind("<FocusIn>", self._on_focus)
         self._bind_shortcuts()
 
+        self._refresh_preview()
         self._update_status()
 
     def _build_menus(self):
@@ -65,6 +121,30 @@ class ImageEditorWindow:
             command=self._exit_app,
         )
 
+        image_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Image", menu=image_menu)
+        image_menu.add_command(
+            label="Set Dimensions…",
+            command=self._set_dimensions,
+        )
+
+        view_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="View", menu=view_menu)
+        view_menu.add_command(
+            label="Zoom In",
+            accelerator="+",
+            command=self._zoom_in,
+        )
+        view_menu.add_command(
+            label="Zoom Out",
+            accelerator="-",
+            command=self._zoom_out,
+        )
+        view_menu.add_command(
+            label="Reset Zoom",
+            command=self._zoom_reset,
+        )
+
         help_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Help", menu=help_menu)
         help_menu.add_command(
@@ -86,11 +166,44 @@ class ImageEditorWindow:
         )
         panel.pack(fill=tk.BOTH, expand=True)
 
-        ttk.Label(
-            panel,
-            text="Tile image grid will appear here.",
-            style=self._styles.label,
-        ).pack(anchor=tk.W)
+        grid = ttk.Frame(panel, style=self._styles.frame)
+        grid.pack(fill=tk.BOTH, expand=True)
+        grid.rowconfigure(0, weight=1)
+        grid.columnconfigure(0, weight=1)
+
+        self.canvas = tk.Canvas(
+            grid,
+            bg=theme.CANVAS_BG,
+            highlightthickness=0,
+            cursor="crosshair",
+        )
+        self._hscroll = ttk.Scrollbar(
+            grid,
+            orient=tk.HORIZONTAL,
+            command=self.canvas.xview,
+            style=self._styles.scrollbar,
+        )
+        self._vscroll = ttk.Scrollbar(
+            grid,
+            orient=tk.VERTICAL,
+            command=self.canvas.yview,
+            style=self._styles.scrollbar,
+        )
+        self.canvas.configure(
+            xscrollcommand=self._hscroll.set,
+            yscrollcommand=self._vscroll.set,
+        )
+        self.canvas.grid(row=0, column=0, sticky="nsew")
+        self._vscroll.grid(row=0, column=1, sticky="ns")
+        self._hscroll.grid(row=1, column=0, sticky="ew")
+        self.canvas.configure(takefocus=True)
+        self.canvas.bind("<Button-1>", lambda event: self._on_draw(event, 1))
+        self.canvas.bind("<B1-Motion>", lambda event: self._on_draw(event, 1))
+        self.canvas.bind("<Button-3>", lambda event: self._on_draw(event, 0))
+        self.canvas.bind("<B3-Motion>", lambda event: self._on_draw(event, 0))
+        self.canvas.bind("<ButtonRelease-1>", self._on_stroke_end)
+        self.canvas.bind("<ButtonRelease-3>", self._on_stroke_end)
+        shortcuts.bind_canvas_zoom(self.canvas, self._zoom_in, self._zoom_out)
 
     def _build_status_bar(self):
         status_frame = tk.Frame(self._main_frame, bg=self._window_bg)
@@ -107,14 +220,185 @@ class ImageEditorWindow:
     def _bind_shortcuts(self):
         shortcuts.bind_common(self.root, self.coordinator)
 
-    def _update_status(self):
-        self._status_label.configure(text="No tile image")
+    def _image_pixel_size(self):
+        return (
+            self._image["width"] * TILE_SIZE * self.scale,
+            self._image["height"] * TILE_SIZE * self.scale,
+        )
+
+    def _refresh_preview(self):
+        pixels = resolve_tile_image_pixels(self._image, self.project.tiles)
+        draw_pixel_grid(self.canvas, pixels, self.scale)
+        width, height = self._image_pixel_size()
+        self.canvas.configure(scrollregion=(0, 0, width, height))
+        cell = TILE_SIZE * self.scale
+        for col in range(self._image["width"] + 1):
+            x = col * cell
+            if col == self._image["width"]:
+                x = width - 1
+            self.canvas.create_line(x, 0, x, height, fill=CANVAS_GRID_OUTLINE)
+        for row in range(self._image["height"] + 1):
+            y = row * cell
+            if row == self._image["height"]:
+                y = height - 1
+            self.canvas.create_line(0, y, width, y, fill=CANVAS_GRID_OUTLINE)
+
+    def _update_status(self, cell_index=None):
+        unique = count_unique_tiles(self._image["cells"])
+        parts = [
+            "{}  {}×{}".format(
+                self._image["name"],
+                self._image["width"],
+                self._image["height"],
+            ),
+            "Unique tiles: {} / {}".format(unique, TILE_IMAGE_MAX_UNIQUE_TILES),
+        ]
+        if cell_index is not None:
+            tile_index = self._image["cells"][cell_index]
+            col = cell_index % self._image["width"]
+            row = cell_index // self._image["width"]
+            tile = self.project.get_tile(tile_index)
+            parts.append("Cell {},{} → {} (TIL{:02X})".format(
+                col, row, tile["name"], tile_index
+            ))
+        self._status_label.configure(text="  |  ".join(parts))
+
+    def _on_draw(self, event, bit):
+        canvas_x = self.canvas.canvasx(event.x)
+        canvas_y = self.canvas.canvasy(event.y)
+        hit = tile_image_pixel_at(
+            canvas_x,
+            canvas_y,
+            self._image["width"],
+            self._image["height"],
+            self.scale,
+        )
+        if hit is None:
+            return
+        cell_index, local_row, local_col = hit
+        if not self._painting:
+            self._begin_cell_stroke(cell_index)
+        elif (
+            self._stroke_tile_index is not None
+            and self._image["cells"][cell_index] != self._stroke_tile_index
+        ):
+            self._end_cell_stroke()
+            self._begin_cell_stroke(cell_index)
+        if self._stroke_tile_index is None:
+            return
+        if self.project.set_tile_pixel(
+            self._stroke_tile_index,
+            local_row,
+            local_col,
+            bit,
+            notify=False,
+        ):
+            self._stroke_dirty = True
+            self._blit_tile_pixel(self._stroke_tile_index, local_row, local_col)
+            self._update_status(cell_index)
+
+    def _blit_tile_pixel(self, tile_index, local_row, local_col):
+        """Update one pattern pixel on every image cell that uses tile_index."""
+        photo = getattr(self.canvas, "_pixel_photo", None)
+        if photo is None:
+            self._refresh_preview()
+            return
+        color = resolve_pixel_color(
+            self.project.get_tile(tile_index), local_row, local_col
+        )
+        width = self._image["width"]
+        for cell_index, mapped in enumerate(self._image["cells"]):
+            if mapped != tile_index:
+                continue
+            cell_col = cell_index % width
+            cell_row = cell_index // width
+            put_scaled_pixel(
+                photo,
+                cell_col * TILE_SIZE + local_col,
+                cell_row * TILE_SIZE + local_row,
+                color,
+                self.scale,
+            )
+
+    def _begin_cell_stroke(self, cell_index):
+        self._painting = True
+        tile_index, source_index = ensure_unique_cell_tile(self._image, cell_index)
+        if source_index is not None:
+            self.project.duplicate_tile(source_index, tile_index, notify=False)
+        self._stroke_tile_index = tile_index
+        self._stroke_dirty = False
+
+    def _end_cell_stroke(self):
+        if self._stroke_dirty and self._stroke_tile_index is not None:
+            self.project.notify_tile_changed(self._stroke_tile_index)
+        self._stroke_tile_index = None
+        self._stroke_dirty = False
+        self._painting = False
+
+    def _on_stroke_end(self, _event=None):
+        self._end_cell_stroke()
+        self._update_status()
+
+    def _set_dimensions(self, _event=None):
+        width = simpledialog.askinteger(
+            "Set Dimensions",
+            "Width in tiles:",
+            initialvalue=self._image["width"],
+            minvalue=1,
+            parent=self.root,
+        )
+        if width is None:
+            return
+        height = simpledialog.askinteger(
+            "Set Dimensions",
+            "Height in tiles:",
+            initialvalue=self._image["height"],
+            minvalue=1,
+            parent=self.root,
+        )
+        if height is None:
+            return
+        if width < self._image["width"] or height < self._image["height"]:
+            if not messagebox.askyesno(
+                "Set Dimensions",
+                "Shrinking the image will discard tiles outside the new size. Continue?",
+                parent=self.root,
+            ):
+                return
+        try:
+            resize_tile_image(self._image, width, height)
+        except (ValueError, TileImageUniqueTileLimitError) as exc:
+            messagebox.showerror("Set Dimensions", str(exc), parent=self.root)
+            return
+        self._refresh_preview()
+        self._update_status()
+
+    def _zoom_in(self, _event=None):
+        scale = clamp_image_scale(self.scale + 1)
+        if scale != self.scale:
+            self.scale = scale
+            self._refresh_preview()
+
+    def _zoom_out(self, _event=None):
+        scale = clamp_image_scale(self.scale - 1)
+        if scale != self.scale:
+            self.scale = scale
+            self._refresh_preview()
+
+    def _zoom_reset(self, _event=None):
+        if self.scale != IMAGE_PIXEL_SCALE_DEFAULT:
+            self.scale = IMAGE_PIXEL_SCALE_DEFAULT
+            self._refresh_preview()
 
     def _on_project_change(self, event):
-        if event.kind == ChangeEvent.PROJECT_LOADED:
+        if self._painting:
+            return
+        if event.kind in (ChangeEvent.TILE_CHANGED, ChangeEvent.PROJECT_LOADED):
+            self._refresh_preview()
             self._update_status()
 
     def shutdown(self):
+        self._end_cell_stroke()
         self.project.remove_listener(self._on_project_change)
 
     def focus(self):
@@ -149,7 +433,7 @@ class ImageEditorWindow:
     def _show_about(self, _event=None):
         messagebox.showinfo(
             "About burglekutt",
-            "burglekutt — TI-99 tile image editor\nPhase 1: shell",
+            "burglekutt — TI-99 tile image editor\nPhase 2: draw on tileset tiles",
         )
 
     def _on_close(self, _event=None):

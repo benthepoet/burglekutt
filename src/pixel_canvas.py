@@ -38,6 +38,19 @@ def photoimage_from_pixels(pixels, scale=1):
     return tk.PhotoImage(width=out_width, height=out_height, data=ppm, format="PPM")
 
 
+def scaled_pixel_rect(col, row, scale):
+    """Return exclusive (x0, y0, x1, y1) for one logical pixel at scale."""
+    x0 = col * scale
+    y0 = row * scale
+    return x0, y0, x0 + scale, y0 + scale
+
+
+def put_scaled_pixel(photo, col, row, hex_color, scale):
+    """Paint one logical pixel onto an existing PhotoImage."""
+    x0, y0, x1, y1 = scaled_pixel_rect(col, row, scale)
+    photo.put(hex_color, to=(x0, y0, x1, y1))
+
+
 def draw_pixel_grid(canvas, pixels, scale=1):
     """Replace canvas contents with one PhotoImage for the pixel grid."""
     photo = photoimage_from_pixels(pixels, scale)
