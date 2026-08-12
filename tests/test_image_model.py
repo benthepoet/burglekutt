@@ -13,9 +13,12 @@ from image_model import (
     ensure_unique_cell_tile,
     next_unreferenced_tile_index,
     resize_tile_image,
+    tile_image_name_for_index,
     unique_tile_indices,
+    unused_tile_image_name,
     validate_tile_image,
     validate_unique_tile_count,
+    validate_unique_tile_image_name,
 )
 
 
@@ -104,6 +107,21 @@ class TestImageModel(unittest.TestCase):
         self.assertEqual(tile_index, 0)
         self.assertIsNone(source)
         self.assertEqual(image["cells"][-1], 0)
+
+    def test_unused_tile_image_name_skips_taken(self):
+        images = [empty_tile_image("IMG00"), empty_tile_image("IMG01")]
+        self.assertEqual(unused_tile_image_name(images), "IMG02")
+        self.assertEqual(tile_image_name_for_index(15), "IMG0F")
+
+    def test_validate_unique_tile_image_name(self):
+        images = [empty_tile_image("TITLE"), empty_tile_image("LOGO")]
+        self.assertEqual(validate_unique_tile_image_name("HUD", images), "HUD")
+        self.assertEqual(
+            validate_unique_tile_image_name("TITLE", images, skip_index=0),
+            "TITLE",
+        )
+        with self.assertRaises(ValueError):
+            validate_unique_tile_image_name("LOGO", images)
 
 
 if __name__ == "__main__":

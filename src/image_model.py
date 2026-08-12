@@ -9,6 +9,7 @@ DEFAULT_TILE_IMAGE_NAME = "IMG00"
 DEFAULT_TILE_IMAGE_WIDTH = 32
 DEFAULT_TILE_IMAGE_HEIGHT = 24
 MAX_TILE_IMAGE_NAME_LEN = 32
+MAX_TILE_IMAGES = TILE_COUNT
 
 
 class TileImageUniqueTileLimitError(ValueError):
@@ -31,6 +32,23 @@ def copy_tile_image(image):
     return copy.deepcopy(image)
 
 
+def tile_image_name_for_index(index):
+    """Return the default tile image name for a slot index (IMG00..IMGFF)."""
+    if index < 0 or index >= MAX_TILE_IMAGES:
+        raise ValueError("tile image index out of range")
+    return "IMG{:02X}".format(index)
+
+
+def unused_tile_image_name(images):
+    """Return the next unused default tile image name."""
+    used = {image["name"] for image in images}
+    for index in range(MAX_TILE_IMAGES):
+        name = tile_image_name_for_index(index)
+        if name not in used:
+            return name
+    raise ValueError("tile image name limit reached")
+
+
 def validate_tile_image_name(name):
     """Return a stripped tile image name or raise ValueError."""
     if not isinstance(name, str):
@@ -40,6 +58,17 @@ def validate_tile_image_name(name):
         raise ValueError("tile image name must not be empty")
     if len(name) > MAX_TILE_IMAGE_NAME_LEN:
         raise ValueError("tile image name is too long")
+    return name
+
+
+def validate_unique_tile_image_name(name, images, skip_index=None):
+    """Validate a name and reject duplicates in images."""
+    name = validate_tile_image_name(name)
+    for index, image in enumerate(images):
+        if skip_index is not None and index == skip_index:
+            continue
+        if image["name"] == name:
+            raise ValueError("tile image name already exists")
     return name
 
 

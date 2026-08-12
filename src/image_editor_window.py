@@ -9,12 +9,15 @@ from composite import resolve_tile_image_pixels
 from image_model import (
     DEFAULT_TILE_IMAGE_HEIGHT,
     DEFAULT_TILE_IMAGE_WIDTH,
+    MAX_TILE_IMAGES,
     TILE_IMAGE_MAX_UNIQUE_TILES,
     TileImageUniqueTileLimitError,
     count_unique_tiles,
     empty_tile_image,
     ensure_unique_cell_tile,
     resize_tile_image,
+    unused_tile_image_name,
+    validate_unique_tile_image_name,
 )
 from palette import resolve_pixel_color
 from pixel_canvas import draw_pixel_grid, put_scaled_pixel
@@ -63,10 +66,13 @@ class ImageEditorWindow:
         self._stroke_tile_index = None
         self._stroke_dirty = False
         self._painting = False
-        self._image = empty_tile_image(
-            width=DEFAULT_TILE_IMAGE_WIDTH,
-            height=DEFAULT_TILE_IMAGE_HEIGHT,
-        )
+        self._images = [
+            empty_tile_image(
+                width=DEFAULT_TILE_IMAGE_WIDTH,
+                height=DEFAULT_TILE_IMAGE_HEIGHT,
+            )
+        ]
+        self._active_index = 0
         self.scale = IMAGE_PIXEL_SCALE_DEFAULT
 
         self.root.title("burglekutt — Tile Image")
@@ -90,8 +96,13 @@ class ImageEditorWindow:
         self.root.bind("<FocusIn>", self._on_focus)
         self._bind_shortcuts()
 
+        self._refresh_image_list()
         self._refresh_preview()
         self._update_status()
+
+    @property
+    def _image(self):
+        return self._images[self._active_index]
 
     def _build_menus(self):
         menubar = tk.Menu(self.root)
@@ -123,6 +134,10 @@ class ImageEditorWindow:
 
         image_menu = tk.Menu(menubar, tearoff=0)
         menubar.add_cascade(label="Image", menu=image_menu)
+        image_menu.add_command(label="Add…", command=self._add_image)
+        image_menu.add_command(label="Remove", command=self._remove_image)
+        image_menu.add_command(label="Rename…", command=self._rename_image)
+        image_menu.add_separator()
         image_menu.add_command(
             label="Set Dimensions…",
             command=self._set_dimensions,
@@ -158,13 +173,64 @@ class ImageEditorWindow:
         theme.register_frame(content, self.root, self._window_bg)
         content.pack(fill=tk.BOTH, expand=True, padx=8, pady=8)
 
+        left = ttk.Labelframe(
+            content,
+            text="Images",
+            padding=8,
+            style=self._styles.labelframe,
+        )
+        left.pack(side=tk.LEFT, fill=tk.Y)
+
+        list_frame = ttk.Frame(left, style=self._styles.frame)
+        list_frame.pack(fill=tk.BOTH, expand=True)
+
+        list_scroll = ttk.Scrollbar(
+            list_frame,
+            orient=tk.VERTICAL,
+            style=self._styles.scrollbar,
+        )
+        list_scroll.pack(side=tk.RIGHT, fill=tk.Y)
+
+        self._image_list = tk.Listbox(
+            list_frame,
+            width=20,
+            height=16,
+            yscrollcommand=list_scroll.set,
+        )
+        self._image_list.pack(side=tk.LEFT, fill=tk.BOTH, expand=True)
+        list_scroll.config(command=self._image_list.yview)
+        self._image_list.bind("<<ListboxSelect>>", self._on_list_select)
+        self._image_list.bind("<F2>", self._rename_image)
+        self._image_list.bind("<Delete>", self._remove_image)
+
+        buttons = ttk.Frame(left, style=self._styles.frame)
+        buttons.pack(fill=tk.X, pady=(8, 0))
+        ttk.Button(
+            buttons,
+            text="Add…",
+            command=self._add_image,
+            style=self._styles.button,
+        ).pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Button(
+            buttons,
+            text="Remove",
+            command=self._remove_image,
+            style=self._styles.button,
+        ).pack(side=tk.LEFT, padx=(0, 4))
+        ttk.Button(
+            buttons,
+            text="Rename…",
+            command=self._rename_image,
+            style=self._styles.button,
+        ).pack(side=tk.LEFT)
+
         panel = ttk.Labelframe(
             content,
             text="Image",
             padding=8,
             style=self._styles.labelframe,
         )
-        panel.pack(fill=tk.BOTH, expand=True)
+        panel.pack(side=tk.LEFT, fill=tk.BOTH, expand=True, padx=(8, 0))
 
         grid = ttk.Frame(panel, style=self._styles.frame)
         grid.pack(fill=tk.BOTH, expand=True)
@@ -339,6 +405,130 @@ class ImageEditorWindow:
         self._end_cell_stroke()
         self._update_status()
 
+    def _image_list_label(self, image):
+        return "{}  {}×{}".format(image["name"], image["width"], image["height"])
+
+    def _refresh_image_list(self):
+        self._image_list.delete(0, tk.END)
+        for image in self._images:
+            self._image_list.insert(tk.END, self._image_list_label(image))
+        if self._images:
+            self._image_list.selection_clear(0, tk.END)
+            self._image_list.selection_set(self._active_index)
+            self._image_list.activate(self._active_index)
+            self._image_list.see(self._active_index)
+
+    def _on_list_select(self, _event=None):
+        selection = self._image_list.curselection()
+        if not selection:
+            return
+        index = int(selection[0])
+        if index == self._active_index:
+            return
+        self._end_cell_stroke()
+        self._active_index = index
+        self._refresh_preview()
+        self._update_status()
+
+    def _add_image(self, _event=None):
+        if len(self._images) >= MAX_TILE_IMAGES:
+            messagebox.showerror(
+                "Add Image",
+                "Image limit reached ({}).".format(MAX_TILE_IMAGES),
+                parent=self.root,
+            )
+            return
+        try:
+            default_name = unused_tile_image_name(self._images)
+        except ValueError as exc:
+            messagebox.showerror("Add Image", str(exc), parent=self.root)
+            return
+        name = simpledialog.askstring(
+            "Add Image",
+            "Image name:",
+            initialvalue=default_name,
+            parent=self.root,
+        )
+        if name is None:
+            return
+        try:
+            name = validate_unique_tile_image_name(name, self._images)
+        except ValueError as exc:
+            messagebox.showerror("Add Image", str(exc), parent=self.root)
+            return
+        width = simpledialog.askinteger(
+            "Add Image",
+            "Width in tiles:",
+            initialvalue=DEFAULT_TILE_IMAGE_WIDTH,
+            minvalue=1,
+            parent=self.root,
+        )
+        if width is None:
+            return
+        height = simpledialog.askinteger(
+            "Add Image",
+            "Height in tiles:",
+            initialvalue=DEFAULT_TILE_IMAGE_HEIGHT,
+            minvalue=1,
+            parent=self.root,
+        )
+        if height is None:
+            return
+        try:
+            image = empty_tile_image(name, width, height)
+        except ValueError as exc:
+            messagebox.showerror("Add Image", str(exc), parent=self.root)
+            return
+        self._end_cell_stroke()
+        self._images.append(image)
+        self._active_index = len(self._images) - 1
+        self._refresh_image_list()
+        self._refresh_preview()
+        self._update_status()
+
+    def _remove_image(self, _event=None):
+        if len(self._images) <= 1:
+            messagebox.showwarning(
+                "Remove Image",
+                "At least one tile image is required.",
+                parent=self.root,
+            )
+            return
+        image = self._image
+        if not messagebox.askyesno(
+            "Remove Image",
+            "Remove image {}?".format(image["name"]),
+            parent=self.root,
+        ):
+            return
+        self._end_cell_stroke()
+        del self._images[self._active_index]
+        if self._active_index >= len(self._images):
+            self._active_index = len(self._images) - 1
+        self._refresh_image_list()
+        self._refresh_preview()
+        self._update_status()
+
+    def _rename_image(self, _event=None):
+        image = self._image
+        new_name = simpledialog.askstring(
+            "Rename Image",
+            "Image name:",
+            initialvalue=image["name"],
+            parent=self.root,
+        )
+        if new_name is None:
+            return
+        try:
+            image["name"] = validate_unique_tile_image_name(
+                new_name, self._images, skip_index=self._active_index
+            )
+        except ValueError as exc:
+            messagebox.showerror("Rename Image", str(exc), parent=self.root)
+            return
+        self._refresh_image_list()
+        self._update_status()
+
     def _set_dimensions(self, _event=None):
         width = simpledialog.askinteger(
             "Set Dimensions",
@@ -370,6 +560,7 @@ class ImageEditorWindow:
         except (ValueError, TileImageUniqueTileLimitError) as exc:
             messagebox.showerror("Set Dimensions", str(exc), parent=self.root)
             return
+        self._refresh_image_list()
         self._refresh_preview()
         self._update_status()
 
@@ -393,7 +584,20 @@ class ImageEditorWindow:
     def _on_project_change(self, event):
         if self._painting:
             return
-        if event.kind in (ChangeEvent.TILE_CHANGED, ChangeEvent.PROJECT_LOADED):
+        if event.kind == ChangeEvent.PROJECT_LOADED:
+            self._end_cell_stroke()
+            self._images = [
+                empty_tile_image(
+                    width=DEFAULT_TILE_IMAGE_WIDTH,
+                    height=DEFAULT_TILE_IMAGE_HEIGHT,
+                )
+            ]
+            self._active_index = 0
+            self._refresh_image_list()
+            self._refresh_preview()
+            self._update_status()
+            return
+        if event.kind == ChangeEvent.TILE_CHANGED:
             self._refresh_preview()
             self._update_status()
 
@@ -433,7 +637,7 @@ class ImageEditorWindow:
     def _show_about(self, _event=None):
         messagebox.showinfo(
             "About burglekutt",
-            "burglekutt — TI-99 tile image editor\nPhase 2: draw on tileset tiles",
+            "burglekutt — TI-99 tile image editor\nPhase 3: image list",
         )
 
     def _on_close(self, _event=None):

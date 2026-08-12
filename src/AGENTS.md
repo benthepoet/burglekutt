@@ -41,7 +41,7 @@ src/
 ├── asm_format_schema.py  # Load export format directories
 ├── binary_export.py      # Raw byte output
 ├── image_editor.py       # Tile image editor entry
-├── image_editor_window.py # Tile image editor window (Phase 2 grid)
+├── image_editor_window.py # Tile image editor window (Phase 3 list)
 ├── image_model.py        # Tile image structs, validation, unique-tile budget
 ├── image_export.py       # Tile-image dedupe, local remap, patterns/colors/map
 ├── map_editor.py         # Map/screen editor (follow-on)
