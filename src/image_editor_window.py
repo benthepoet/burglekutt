@@ -6,19 +6,21 @@ from tkinter import messagebox, simpledialog, ttk
 import shortcuts
 import theme
 from composite import resolve_tile_image_pixels
+from export_preview import (
+    MODE_ASSEMBLY,
+    MODE_BINARY,
+    SCOPE_TILE_IMAGE,
+    show_export_preview,
+)
 from image_model import (
     DEFAULT_TILE_IMAGE_HEIGHT,
     DEFAULT_TILE_IMAGE_WIDTH,
-    MAX_TILE_IMAGES,
     TILE_IMAGE_MAX_CELLS,
     TILE_IMAGE_MAX_UNIQUE_TILES,
     TileImageUniqueTileLimitError,
     count_unique_tiles,
-    empty_tile_image,
     ensure_unique_cell_tile,
-    resize_tile_image,
     unused_tile_image_name,
-    validate_unique_tile_image_name,
 )
 from palette import resolve_pixel_color
 from pixel_canvas import draw_pixel_grid, put_scaled_pixel
@@ -77,13 +79,7 @@ class ImageEditorWindow:
         self._stroke_tile_index = None
         self._stroke_dirty = False
         self._painting = False
-        self._images = [
-            empty_tile_image(
-                width=DEFAULT_TILE_IMAGE_WIDTH,
-                height=DEFAULT_TILE_IMAGE_HEIGHT,
-            )
-        ]
-        self._active_index = 0
+        self._export_preview = None
         self.scale = IMAGE_PIXEL_SCALE_DEFAULT
 
         self.root.title("burglekutt — Tile Image")
@@ -115,7 +111,7 @@ class ImageEditorWindow:
 
     @property
     def _image(self):
-        return self._images[self._active_index]
+        return self.project.get_active_tile_image()
 
     def _build_menus(self):
         menubar = tk.Menu(self.root)
@@ -154,6 +150,19 @@ class ImageEditorWindow:
         image_menu.add_command(
             label="Set Dimensions…",
             command=self._set_dimensions,
+        )
+
+        export_menu = tk.Menu(menubar, tearoff=0)
+        menubar.add_cascade(label="Export", menu=export_menu)
+        export_menu.add_command(
+            label="Save Assembly…",
+            accelerator="Ctrl+Shift+A",
+            command=self._preview_assembly,
+        )
+        export_menu.add_command(
+            label="Save Binary…",
+            accelerator="Ctrl+Shift+B",
+            command=self._preview_binary,
         )
 
         view_menu = tk.Menu(menubar, tearoff=0)
@@ -409,6 +418,7 @@ class ImageEditorWindow:
         tile_index, source_index = ensure_unique_cell_tile(self._image, cell_index)
         if source_index is not None:
             self.project.duplicate_tile(source_index, tile_index, notify=False)
+            self.project.notify_tile_image_changed()
         self._stroke_tile_index = tile_index
         self._stroke_dirty = False
 
@@ -428,36 +438,28 @@ class ImageEditorWindow:
 
     def _refresh_image_list(self):
         self._image_list.delete(0, tk.END)
-        for image in self._images:
+        for image in self.project.tile_images:
             self._image_list.insert(tk.END, self._image_list_label(image))
-        if self._images:
+        if self.project.tile_images:
+            index = self.project.active_tile_image_index
             self._image_list.selection_clear(0, tk.END)
-            self._image_list.selection_set(self._active_index)
-            self._image_list.activate(self._active_index)
-            self._image_list.see(self._active_index)
+            self._image_list.selection_set(index)
+            self._image_list.activate(index)
+            self._image_list.see(index)
 
     def _on_list_select(self, _event=None):
         selection = self._image_list.curselection()
         if not selection:
             return
         index = int(selection[0])
-        if index == self._active_index:
+        if index == self.project.active_tile_image_index:
             return
         self._end_cell_stroke()
-        self._active_index = index
-        self._fit_to_window()
-        self._update_status()
+        self.project.set_active_tile_image_index(index)
 
     def _add_image(self, _event=None):
-        if len(self._images) >= MAX_TILE_IMAGES:
-            messagebox.showerror(
-                "Add Image",
-                "Image limit reached ({}).".format(MAX_TILE_IMAGES),
-                parent=self.root,
-            )
-            return
         try:
-            default_name = unused_tile_image_name(self._images)
+            default_name = unused_tile_image_name(self.project.tile_images)
         except ValueError as exc:
             messagebox.showerror("Add Image", str(exc), parent=self.root)
             return
@@ -470,7 +472,7 @@ class ImageEditorWindow:
         if name is None:
             return
         try:
-            name = validate_unique_tile_image_name(name, self._images)
+            name = name.strip()
         except ValueError as exc:
             messagebox.showerror("Add Image", str(exc), parent=self.root)
             return
@@ -495,20 +497,14 @@ class ImageEditorWindow:
         )
         if height is None:
             return
+        self._end_cell_stroke()
         try:
-            image = empty_tile_image(name, width, height)
+            self.project.add_tile_image(name, width, height)
         except ValueError as exc:
             messagebox.showerror("Add Image", str(exc), parent=self.root)
-            return
-        self._end_cell_stroke()
-        self._images.append(image)
-        self._active_index = len(self._images) - 1
-        self._refresh_image_list()
-        self._fit_to_window()
-        self._update_status()
 
     def _remove_image(self, _event=None):
-        if len(self._images) <= 1:
+        if len(self.project.tile_images) <= 1:
             messagebox.showwarning(
                 "Remove Image",
                 "At least one tile image is required.",
@@ -523,12 +519,10 @@ class ImageEditorWindow:
         ):
             return
         self._end_cell_stroke()
-        del self._images[self._active_index]
-        if self._active_index >= len(self._images):
-            self._active_index = len(self._images) - 1
-        self._refresh_image_list()
-        self._fit_to_window()
-        self._update_status()
+        try:
+            self.project.remove_tile_image(self.project.active_tile_image_index)
+        except ValueError as exc:
+            messagebox.showerror("Remove Image", str(exc), parent=self.root)
 
     def _rename_image(self, _event=None):
         image = self._image
@@ -541,14 +535,11 @@ class ImageEditorWindow:
         if new_name is None:
             return
         try:
-            image["name"] = validate_unique_tile_image_name(
-                new_name, self._images, skip_index=self._active_index
+            self.project.rename_tile_image(
+                self.project.active_tile_image_index, new_name
             )
         except ValueError as exc:
             messagebox.showerror("Rename Image", str(exc), parent=self.root)
-            return
-        self._refresh_image_list()
-        self._update_status()
 
     def _set_dimensions(self, _event=None):
         width = simpledialog.askinteger(
@@ -580,13 +571,11 @@ class ImageEditorWindow:
             ):
                 return
         try:
-            resize_tile_image(self._image, width, height)
+            self.project.resize_tile_image_at(
+                self.project.active_tile_image_index, width, height
+            )
         except (ValueError, TileImageUniqueTileLimitError) as exc:
             messagebox.showerror("Set Dimensions", str(exc), parent=self.root)
-            return
-        self._refresh_image_list()
-        self._fit_to_window()
-        self._update_status()
 
     def _on_canvas_configure(self, event):
         if event.widget is not self.canvas:
@@ -634,23 +623,60 @@ class ImageEditorWindow:
             return
         if event.kind == ChangeEvent.PROJECT_LOADED:
             self._end_cell_stroke()
-            self._images = [
-                empty_tile_image(
-                    width=DEFAULT_TILE_IMAGE_WIDTH,
-                    height=DEFAULT_TILE_IMAGE_HEIGHT,
-                )
-            ]
-            self._active_index = 0
             self._refresh_image_list()
             self._fit_to_window()
+            self._update_status()
+            return
+        if event.kind == ChangeEvent.ACTIVE_TILE_IMAGE_CHANGED:
+            self._refresh_image_list()
+            self._fit_to_window()
+            self._update_status()
+            return
+        if event.kind == ChangeEvent.TILE_IMAGE_CHANGED:
+            self._refresh_image_list()
+            self._refresh_preview()
             self._update_status()
             return
         if event.kind == ChangeEvent.TILE_CHANGED:
             self._refresh_preview()
             self._update_status()
 
+    def _close_export_preview(self):
+        if self._export_preview is not None:
+            self._export_preview.close()
+            self._export_preview = None
+
+    def _preview_assembly(self, _event=None):
+        self._close_export_preview()
+        try:
+            self.project.get_active_tile_image()
+        except IndexError:
+            return
+        self._export_preview = show_export_preview(
+            self.root,
+            self.project,
+            SCOPE_TILE_IMAGE,
+            MODE_ASSEMBLY,
+            self._window_bg,
+        )
+
+    def _preview_binary(self, _event=None):
+        self._close_export_preview()
+        try:
+            self.project.get_active_tile_image()
+        except IndexError:
+            return
+        self._export_preview = show_export_preview(
+            self.root,
+            self.project,
+            SCOPE_TILE_IMAGE,
+            MODE_BINARY,
+            self._window_bg,
+        )
+
     def shutdown(self):
         self._end_cell_stroke()
+        self._close_export_preview()
         self.project.remove_listener(self._on_project_change)
 
     def focus(self):
@@ -685,7 +711,7 @@ class ImageEditorWindow:
     def _show_about(self, _event=None):
         messagebox.showinfo(
             "About burglekutt",
-            "burglekutt — TI-99 tile image editor\nPhase 3: image list",
+            "burglekutt — TI-99 tile image editor\nPhase 4: project I/O and export",
         )
 
     def _on_close(self, _event=None):

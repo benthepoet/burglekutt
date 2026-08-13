@@ -21,6 +21,7 @@ class ImageEditorApp:
 
         self.open_or_focus_image_editor()
         shortcuts.bind_file_shortcuts(self.root, self)
+        shortcuts.bind_export_shortcuts(self.root, self)
 
     def _window_alive(self, editor):
         if editor is None:
@@ -108,6 +109,14 @@ class ImageEditorApp:
             return
         self.project_path = path
         self._update_titles()
+
+    def preview_assembly_shortcut(self):
+        if self.image_editor is not None:
+            self.image_editor._preview_assembly()
+
+    def preview_binary_shortcut(self):
+        if self.image_editor is not None:
+            self.image_editor._preview_binary()
 
     def _update_titles(self):
         suffix = ""

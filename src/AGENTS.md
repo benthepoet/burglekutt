@@ -19,7 +19,7 @@
 src/
 ├── editor.py              # App coordinator: Project + three editor windows
 ├── project.py            # Graphics project state + change notifications
-├── project_io.py         # JSON save/load (version 1)
+├── project_io.py         # JSON save/load (version 2, tile_images)
 ├── tileset_editor.py      # Tileset editor window
 ├── metatile_editor.py     # Metatile editor window
 ├── supertile_editor.py    # Supertile editor window
@@ -41,7 +41,7 @@ src/
 ├── asm_format_schema.py  # Load export format directories
 ├── binary_export.py      # Raw byte output
 ├── image_editor.py       # Tile image editor entry
-├── image_editor_window.py # Tile image editor window (Phase 3 list)
+├── image_editor_window.py # Tile image editor window (Phase 4 I/O + export)
 ├── image_model.py        # Tile image structs, validation, unique-tile budget
 ├── image_export.py       # Tile-image dedupe, local remap, patterns/colors/map
 ├── map_editor.py         # Map/screen editor (follow-on)
@@ -228,6 +228,7 @@ Label patterns:
 | Undo stack | `test_undo_stack.py` |
 | Tile image export | `test_image_export.py` |
 | Tile image editor geometry | `test_image_editor_window.py` |
+| Tile image model | `test_image_model.py` |
 
 ## Commands
 

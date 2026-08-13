@@ -20,6 +20,21 @@ class TestExportPreview(unittest.TestCase):
         self.assertEqual(asm_name, "patterns_colors.asm")
         self.assertEqual(label, "PATTERNS / COLORS")
 
+    def test_generate_tile_image_export(self):
+        project = Project()
+        project.add_tile_image("TITLE", 2, 2)
+        assembly, binary, asm_name, bin_name, label = generate_export(
+            project,
+            "tile_image",
+        )
+        self.assertIn("TITLE_PATTERNS", assembly)
+        self.assertIn("TITLE_COLORS", assembly)
+        self.assertIn("TITLE_MAP", assembly)
+        self.assertEqual(asm_name, "TITLE.asm")
+        self.assertEqual(bin_name, "TITLE.bin")
+        self.assertIn("TITLE_MAP", label)
+        self.assertTrue(len(binary) > 0)
+
     def test_format_binary_preview_empty(self):
         text = format_binary_preview(b"")
         self.assertIn("0 bytes", text)

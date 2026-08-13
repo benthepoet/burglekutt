@@ -28,6 +28,15 @@ def empty_tile_image(name=DEFAULT_TILE_IMAGE_NAME, width=1, height=1):
     }
 
 
+def default_tile_image():
+    """Return the default 16×16 IMG00 tile image."""
+    return empty_tile_image(
+        DEFAULT_TILE_IMAGE_NAME,
+        DEFAULT_TILE_IMAGE_WIDTH,
+        DEFAULT_TILE_IMAGE_HEIGHT,
+    )
+
+
 def copy_tile_image(image):
     """Return a deep copy of a tile image dict."""
     return copy.deepcopy(image)

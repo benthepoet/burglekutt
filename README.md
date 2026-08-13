@@ -68,7 +68,7 @@ Edits cascade live — change a base tile and every metatile/supertile that refe
 
 **File → New / Load Project / Save Project** works from any editor window.
 
-Projects are JSON (version 1) containing `tiles` (always 256), `metatiles`, and `supertiles`. Unknown keys are ignored on load so future map data can coexist.
+Projects are JSON (version 2) containing `tiles` (always 256), `metatiles`, `supertiles`, and `tile_images`. Version 1 files load with an empty `tile_images` list (the editor seeds a default image). Unknown keys are ignored on load so future map data can coexist.
 
 ## Export
 

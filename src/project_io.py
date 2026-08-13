@@ -2,6 +2,14 @@
 
 import json
 
+from image_model import (
+    MAX_TILE_IMAGES,
+    empty_tile_image,
+    validate_tile_image_dimensions,
+    validate_tile_index,
+    validate_unique_tile_count,
+    validate_unique_tile_image_name,
+)
 from tile_model import (
     METATILE_COUNT,
     SUPERTILE_CELL_COUNT,
@@ -21,7 +29,7 @@ from tile_model import (
     validate_tile_name,
 )
 
-PROJECT_VERSION = 1
+PROJECT_VERSION = 2
 
 
 def _coerce_bit(value):
@@ -126,6 +134,34 @@ def _normalize_supertile(raw, index, metatile_count):
     return supertile
 
 
+def _normalize_tile_image(raw, images_so_far):
+    if not isinstance(raw, dict):
+        raise ValueError("tile image must be an object")
+    name = validate_unique_tile_image_name(
+        raw.get("name", "IMG00"), images_so_far
+    )
+    width, height = validate_tile_image_dimensions(
+        raw.get("width"), raw.get("height")
+    )
+    raw_cells = raw.get("cells", [])
+    if not isinstance(raw_cells, list):
+        raw_cells = []
+    cells = []
+    expected = width * height
+    for index in range(expected):
+        if index < len(raw_cells):
+            try:
+                cells.append(validate_tile_index(raw_cells[index]))
+                continue
+            except ValueError:
+                pass
+        cells.append(0)
+    validate_unique_tile_count(cells)
+    image = empty_tile_image(name, width, height)
+    image["cells"] = cells
+    return image
+
+
 def project_to_dict(project):
     """Serialize a Project to a versioned JSON-friendly dict."""
     return {
@@ -133,6 +169,7 @@ def project_to_dict(project):
         "tiles": project.tiles,
         "metatiles": project.metatiles,
         "supertiles": project.supertiles,
+        "tile_images": project.tile_images,
     }
 
 
@@ -177,11 +214,21 @@ def parse_project_dict(data):
         for index in range(len(raw_supertiles))
     ]
 
+    raw_images = data.get("tile_images", [])
+    if not isinstance(raw_images, list):
+        raw_images = []
+    if len(raw_images) > MAX_TILE_IMAGES:
+        raise ValueError("too many tile images")
+    tile_images = []
+    for raw in raw_images:
+        tile_images.append(_normalize_tile_image(raw, tile_images))
+
     return {
         "version": PROJECT_VERSION,
         "tiles": tiles,
         "metatiles": metatiles,
         "supertiles": supertiles,
+        "tile_images": tile_images,
     }
 
 

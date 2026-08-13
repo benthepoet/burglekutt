@@ -1,5 +1,13 @@
 """Shared project state for all editor windows."""
 
+from image_model import (
+    MAX_TILE_IMAGES,
+    default_tile_image,
+    empty_tile_image,
+    resize_tile_image,
+    unused_tile_image_name,
+    validate_unique_tile_image_name,
+)
 from tile_model import (
     METATILE_COUNT,
     SUPERTILE_COUNT,
@@ -30,6 +38,8 @@ class ChangeEvent:
     ACTIVE_METATILE_CHANGED = "active_metatile_changed"
     SUPERTILE_CHANGED = "supertile_changed"
     ACTIVE_SUPERTILE_CHANGED = "active_supertile_changed"
+    TILE_IMAGE_CHANGED = "tile_image_changed"
+    ACTIVE_TILE_IMAGE_CHANGED = "active_tile_image_changed"
     PROJECT_LOADED = "project_loaded"
 
     def __init__(self, kind, index=0):
@@ -45,6 +55,8 @@ class Project:
         self.active_metatile_index = 0
         self.supertiles = []
         self.active_supertile_index = 0
+        self.tile_images = [default_tile_image()]
+        self.active_tile_image_index = 0
         self._listeners = []
 
     def get_tile(self, index):
@@ -74,6 +86,84 @@ class Project:
         if not self.supertiles:
             raise IndexError("no supertiles defined")
         return self.supertiles[self.active_supertile_index]
+
+    def get_tile_image(self, index):
+        if index < 0 or index >= len(self.tile_images):
+            raise IndexError("tile image index out of range")
+        return self.tile_images[index]
+
+    def get_active_tile_image(self):
+        if not self.tile_images:
+            raise IndexError("no tile images defined")
+        return self.tile_images[self.active_tile_image_index]
+
+    def set_active_tile_image_index(self, index):
+        if index < 0 or index >= len(self.tile_images):
+            raise IndexError("tile image index out of range")
+        if index == self.active_tile_image_index:
+            return False
+        self.active_tile_image_index = index
+        self.notify(ChangeEvent(ChangeEvent.ACTIVE_TILE_IMAGE_CHANGED, index))
+        return True
+
+    def add_tile_image(self, name=None, width=None, height=None):
+        if len(self.tile_images) >= MAX_TILE_IMAGES:
+            raise ValueError("tile image limit reached")
+        if name is None:
+            name = unused_tile_image_name(self.tile_images)
+        else:
+            name = validate_unique_tile_image_name(name, self.tile_images)
+        if width is None or height is None:
+            image = default_tile_image()
+            image["name"] = name
+        else:
+            image = empty_tile_image(name, width, height)
+        index = len(self.tile_images)
+        self.tile_images.append(image)
+        self.active_tile_image_index = index
+        self.notify(ChangeEvent(ChangeEvent.TILE_IMAGE_CHANGED, index))
+        self.notify(ChangeEvent(ChangeEvent.ACTIVE_TILE_IMAGE_CHANGED, index))
+        return index
+
+    def remove_tile_image(self, index):
+        if index < 0 or index >= len(self.tile_images):
+            raise IndexError("tile image index out of range")
+        if len(self.tile_images) <= 1:
+            raise ValueError("at least one tile image is required")
+        del self.tile_images[index]
+        if self.active_tile_image_index >= len(self.tile_images):
+            self.active_tile_image_index = len(self.tile_images) - 1
+        elif index < self.active_tile_image_index:
+            self.active_tile_image_index -= 1
+        self.notify(ChangeEvent(ChangeEvent.TILE_IMAGE_CHANGED, index))
+        self.notify(
+            ChangeEvent(
+                ChangeEvent.ACTIVE_TILE_IMAGE_CHANGED,
+                self.active_tile_image_index,
+            )
+        )
+
+    def rename_tile_image(self, index, name):
+        image = self.get_tile_image(index)
+        validated = validate_unique_tile_image_name(
+            name, self.tile_images, skip_index=index
+        )
+        if image["name"] == validated:
+            return False
+        image["name"] = validated
+        self.notify(ChangeEvent(ChangeEvent.TILE_IMAGE_CHANGED, index))
+        return True
+
+    def resize_tile_image_at(self, index, width, height):
+        image = self.get_tile_image(index)
+        resize_tile_image(image, width, height)
+        self.notify(ChangeEvent(ChangeEvent.TILE_IMAGE_CHANGED, index))
+        return image
+
+    def notify_tile_image_changed(self, index=None):
+        if index is None:
+            index = self.active_tile_image_index
+        self.notify(ChangeEvent(ChangeEvent.TILE_IMAGE_CHANGED, index))
 
     def add_listener(self, callback):
         self._listeners.append(callback)
@@ -345,9 +435,12 @@ class Project:
         self.tiles = data["tiles"]
         self.metatiles = data["metatiles"]
         self.supertiles = data["supertiles"]
+        tile_images = data.get("tile_images") or []
+        self.tile_images = tile_images if tile_images else [default_tile_image()]
         self.active_tile_index = 0
         self.active_metatile_index = 0 if self.metatiles else 0
         self.active_supertile_index = 0 if self.supertiles else 0
+        self.active_tile_image_index = 0
         self.notify(ChangeEvent(ChangeEvent.PROJECT_LOADED))
 
     def reset(self):
@@ -358,4 +451,6 @@ class Project:
         self.active_metatile_index = 0
         self.supertiles = []
         self.active_supertile_index = 0
+        self.tile_images = [default_tile_image()]
+        self.active_tile_image_index = 0
         self.notify(ChangeEvent(ChangeEvent.PROJECT_LOADED))
